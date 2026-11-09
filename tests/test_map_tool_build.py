@@ -15,7 +15,9 @@ from enshrouded_data.map_tool.core import digest, load_bundle, read, write_json
 class BuildTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        # Hosted Windows runners can expose TEMP through an 8.3 alias. Compare
+        # fixtures using the same canonical paths as the actual build tooling.
+        self.root = Path(self.temporary.name).resolve()
         self.source = self.root / 'source with spaces'
         self.module = self.source / 'enshrouded_data/map_tool'
         (self.module / 'native').mkdir(parents=True)
