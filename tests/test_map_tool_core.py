@@ -1,6 +1,7 @@
 """Portable map input safety and fresh-extraction contract checks."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -56,7 +57,11 @@ class CoreTests(unittest.TestCase):
             verified = core.verify_game(self.game, profile, progress=lambda *_: None)
         self.assertEqual(len(verified['files']), 2)
         self.assertEqual(verified['game_writes'], 0)
+        original_stat = container.stat()
         container.write_bytes(b'modified archive')
+        # A same-length rewrite can land in the same filesystem clock tick.
+        # Exercise metadata stability without depending on runner timing.
+        os.utime(container, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns + 2_000_000_000))
         with self.assertRaises(core.MapToolError):
             core.assert_inputs_stable(self.game, verified)
         with self.assertRaises(core.MapToolError):
