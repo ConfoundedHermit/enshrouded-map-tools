@@ -8,6 +8,7 @@ does not change game files or request account credentials.
 [Download v0.1.0 for Windows x64](https://github.com/ConfoundedHermit/enshrouded-map-tools/releases/download/v0.1.0/EnshroudedMaps-0.1.0-Windows-x64.zip)
 · [Release notes](https://github.com/ConfoundedHermit/enshrouded-map-tools/releases/tag/v0.1.0)
 · [Generation and manual upload guide](docs/manual-upload.md)
+· [How it works](docs/HOW-IT-WORKS.md)
 
 ## Requirements
 
