@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "build_id": "26430625",
+  "scene_guid": "509feadb-4c60-425f-9c7c-deeefd9b6920",
+  "expected_scene_chunk_count": 1601,
+  "profile_boundary": "Identity bindings and accepted-output validation only. All geometry and control positions are extracted from the contributor installation.",
+  "halls": [
+    {
+      "region": "Springlands",
+      "slug": "springlands",
+      "level_offset": 9,
+      "surface_teleporter_id": "f9621c90-0b12-4ee7-948c-f611bd36ccea",
+      "interior_teleporter_id": "9be009a4-3f64-4f91-9a1d-81350fdb3d81",
+      "expected_spawners": 226,
+      "expected_floor_count": 228625,
+      "expected_floor_sha256": "43dbca5f7a62853d886ad58f32cb6ca76c2441619edd8f08af0f7f3b0be5d354",
+      "expected_landmarks": 6,
+      "expected_dimensions": [
+        2206,
+        970
+      ],
+      "expected_rgb_sha256": "146c85a310a6b6dfa724f183cd8195c8d956f07963dd80aa971afe3f369d0f86",
+      "expected_projection_cells": 202548
+    },
+    {
+      "region": "Revelwood",
+      "slug": "revelwood",
+      "level_offset": 14,
+      "surface_teleporter_id": "769135d1-b41d-44e7-ab5f-68d4e8303f1a",
+      "interior_teleporter_id": "6b244d67-b375-4692-a3c9-b454b809f860",
+      "expected_spawners": 374,
+      "expected_floor_count": 548105,
+      "expected_floor_sha256": "5c2d35907834316e20a66a3316237ea26024b0886c15a22f772a6a0081298df0",
+      "expected_landmarks": 7,
+      "expected_dimensions": [
+        2262,
+        2017
+      ],
+      "expected_rgb_sha256": "5e6d11579e842dc59c21e55cb6c714f453852938d0b9bf8ca7244bd7d2d51396",
+      "expected_projection_cells": 491105
+    },
+    {
+      "region": "Nomad Highlands",
+      "slug": "nomad-highlands",
+      "level_offset": 19,
+      "surface_teleporter_id": "b149a384-271d-44cd-aca5-7491c49ca612",
+      "interior_teleporter_id": "4b7866d5-c6b8-4e9b-b6ed-ed463ace884c",
+      "expected_spawners": 406,
+      "expected_floor_count": 709414,
+      "expected_floor_sha256": "849acf758716e7997052269dbade94bca066913f2c056c43c8dc51b1c9ef2f7b",
+      "expected_landmarks": 21,
+      "expected_dimensions": [
+        3647,
+        1451
+      ],
+      "expected_rgb_sha256": "bac26ef14638c906440c9da39b82ed51f9f54bd77bbd8013b797d4f207c39b88",
+      "expected_projection_cells": 603172
+    },
+    {
+      "region": "Kindlewastes",
+      "slug": "kindlewastes",
+      "level_offset": 24,
+      "surface_teleporter_id": "52ab73eb-d19a-46f1-82a6-e34f37408727",
+      "interior_teleporter_id": "9bf2828e-59eb-48c6-9a0c-e17f27104e7e",
+      "expected_spawners": 314,
+      "expected_floor_count": 910472,
+      "expected_floor_sha256": "225be5ef1004d64060d374c32ded0c2d369c0c9531a6a134890fbc9dd1756f2e",
+      "expected_landmarks": 8,
+      "expected_dimensions": [
+        3228,
+        2352
+      ],
+      "expected_rgb_sha256": "ec728aba3bd319b949df714abb4edbd84aea8f7da93bdab13e51826e78cf58ce",
+      "expected_projection_cells": 712620
+    },
+    {
+      "region": "Albaneve Summits",
+      "slug": "albaneve-summits",
+      "level_offset": 34,
+      "surface_teleporter_id": "8b89b98e-e6f3-44e2-addf-4bbed26e1806",
+      "interior_teleporter_id": "734fc759-ed6e-4937-a1b1-f8a8c3a5a4d2",
+      "expected_spawners": 239,
+      "expected_floor_count": 524730,
+      "expected_floor_sha256": "43313527311c2815dae7396f57b78f09d82103f1a0f01189ecb6b3de855cc8da",
+      "expected_landmarks": 7,
+      "expected_dimensions": [
+        1523,
+        2762
+      ],
+      "expected_rgb_sha256": "4a9f54b5a370507c76693164db2a6655b04e7e64bee8a143a427d952e3a6452f",
+      "expected_projection_cells": 504626
+    },
+    {
+      "region": "Veilwater Basin",
+      "slug": "veilwater-basin",
+      "level_offset": 44,
+      "surface_teleporter_id": "260342b3-59dc-42f9-ac50-6a93ff987d98",
+      "interior_teleporter_id": "3e1625b1-4ebf-4744-ab00-1924cb0b8a65",
+      "expected_spawners": 166,
+      "expected_floor_count": 280447,
+      "expected_floor_sha256": "3cf22e2ebb2030289320cf9b351870a6f81ff8396f335c0dfccb0b7208dbd2cb",
+      "expected_landmarks": 7,
+      "expected_dimensions": [
+        1229,
+        1894
+      ],
+      "expected_rgb_sha256": "00bd0907924d281072a2ae854e9c84bb244ecae9a87b124d328375e795d500c2",
+      "expected_projection_cells": 233204
+    }
+  ]
+}

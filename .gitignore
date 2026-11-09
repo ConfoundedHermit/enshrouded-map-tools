@@ -1,0 +1,42 @@
+# Local Python and test outputs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Build dependencies, helpers and distributable archives
+.dependencies/
+build/
+dist/
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.zip
+
+# Game inputs, extracted resources and generated maps
+data/
+game/
+games/
+output/
+outputs/
+cache/
+scratch/
+reflection_data.json
+*.kfc
+*.dat
+
+# Local settings and account material
+.env
+.env.*
+!.env.example
+credentials*
+*credentials*.txt
+*token*.txt
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

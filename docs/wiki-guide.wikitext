@@ -1,0 +1,164 @@
+<!-- Intended wiki title: Help:Regenerating map images. Draft until the linked v0.1.0 release has been published and verified. -->
+
+The Enshrouded Maps contributor tool generates the world background and the six [[Hollow Halls]] interior maps from a supported copy of the game. Images are generated locally and uploaded manually using your own wiki account. The tool does not request wiki credentials or change game files.
+
+This workflow regenerates background images. Updating interactive points of interest, quests and other markers is a separate task.
+
+== Get the tool ==
+
+The contributor package is a Windows ZIP containing the Python scripts, prebuilt native helpers, extraction utility and supported-build profiles. Contributors do not need a compiler or the research workspace.
+
+* [https://github.com/ConfoundedHermit/enshrouded-map-tools/releases/download/v0.1.0/EnshroudedMaps-0.1.0-Windows-x64.zip Download version 0.1.0 for Windows x64]
+* [https://github.com/ConfoundedHermit/enshrouded-map-tools/releases/tag/v0.1.0 Release notes and checksums]
+* [https://github.com/ConfoundedHermit/enshrouded-map-tools Source code and issue tracker]
+
+== Requirements ==
+
+* Windows x64 and Python 3.13.
+* A supported, unmodified Enshrouded '''client''' installation. The initial profile is client build '''26430625'''. Dedicated-server installations are not supported by this release.
+* For world rendering, a compatible Vulkan graphics device and driver. The helper checks its requirements and reports unsupported devices in its local log. Hollow Halls geometry generation does not require the world renderer.
+* A separate output folder with space for extracted resources, intermediate data, images and validation records. Choose a new or empty folder outside the game folder and its parent folders.
+
+The tool checks the executable and game archives against its supported-build profile. Mods that change these archives can cause the check to stop even when the executable is unchanged. Use a separate unmodified copy; the tool does not repair game files or remove mods. A game update can require a new supported-build profile and validation.
+
+To list the client builds supported by the extracted package, run:
+
+<syntaxhighlight lang="powershell">
+python -B -m enshrouded_data.map_tool profiles
+</syntaxhighlight>
+
+== Generate images ==
+
+Extract the complete ZIP into its own folder. Run <code>EnshroudedMaps.cmd</code> and follow the prompts for the game folder, output folder, map selection and world layout.
+
+Alternatively, open a terminal in the extracted package and run:
+
+<syntaxhighlight lang="powershell">
+python -B -m enshrouded_data.map_tool generate `
+  --game "C:\Program Files (x86)\Steam\steamapps\common\Enshrouded" `
+  --output "C:\MapExports\Enshrouded-26430625" `
+  --maps all --world-layout both
+</syntaxhighlight>
+
+Replace the example paths with folders on your computer. The command reads your game installation and writes its results to the output folder.
+
+{| class="wikitable"
+! Option !! Result
+|-
+| <code>--maps all</code> || World background and all six Hollow Halls maps
+|-
+| <code>--maps halls</code> || Six Hollow Halls PNGs, one image per hall
+|-
+| <code>--maps world</code> || World background only
+|-
+| <code>--world-layout single</code> || One lossless world PNG master
+|-
+| <code>--world-layout tiles</code> || Lossless PNG tiles and JPEG tiles for wiki review/upload
+|-
+| <code>--world-layout both</code> || The world master and both tile formats
+|-
+| <code>--world-pixels 2560</code> || Default: 2,560 × 2,560 pixels per world tile, matching the published sampling density
+|-
+| <code>--world-pixels 1280</code> || Optional lower rendering density: 1,280 × 1,280 pixels per world tile
+|}
+
+The world layout and pixel-density options apply when the world map is selected. At the default density, the world master is '''20,480 × 20,480 pixels''' and the tile output has '''64 tiles''' in an 8 × 8 arrangement. The single master is assembled from the same rendered pixels as the lossless PNG tiles. At the lower density, the master is 10,240 × 10,240 pixels.
+
+=== Hollow Halls maps ===
+
+Each hall produces one flattened overhead PNG combining its upper and lower surfaces at their original horizontal positions. North is up, the scale is 2 pixels per meter, and the scale bar represents 50 meters.
+
+Gold circles mark checkpoints. Purple circles mark internal portal positions where present; portal links are not inferred. Passages at different heights may overlap in the image without connecting. Static geometry does not show every object or changing obstacle and does not establish a safe route.
+
+=== World tile positions ===
+
+Every world tile covers '''1,280 × 1,280 world units''', regardless of the image's pixel dimensions. Tile filenames use <code>column_row</code>, with columns increasing eastward and rows increasing southward from the north. <code>0_0</code> is the northwest tile and <code>7_7</code> is the southeast tile.
+
+The generated manifest retains each tile's world bounds and DataMaps position. Keep those positions when replacing existing tiles. Do not derive world bounds from the PNG width or reverse the tile rows.
+
+== Review the output ==
+
+Open <code>index.html</code> in the chosen output folder. Review all generated hall images and, when selected, the world gallery. Check orientation, boundaries, seams, entrance and checkpoint labels, and the areas affected by the intended update.
+
+{| class="wikitable"
+! Output !! Purpose
+|-
+| <code>run.json</code> || Completion status, requested options, timing and output hashes
+|-
+| <code>inputs.json</code> || Supported-build input checks
+|-
+| <code>manual-upload.json</code> || Exact local files, suggested wiki filenames, descriptions and file-size eligibility
+|-
+| <code>halls/images/</code> || Six flattened hall PNGs
+|-
+| <code>halls/descriptions/</code> || Suggested descriptions for new hall image pages
+|-
+| <code>world/master/Embervale.png</code> || Lossless world master, when requested
+|-
+| <code>world/tiles/</code> || Lossless PNG world tiles, when requested
+|-
+| <code>world/wiki/</code> || Quality-100, 4:4:4 JPEG world tiles, when requested
+|-
+| <code>world/quality/</code> || JPEG comparison metrics and encoded-header checks
+|-
+| <code>cache/</code> || Local extraction and generation intermediates
+|}
+
+PNG generation checks every chunk CRC and every decoded RGB pixel against its rendering or assembly hash. JPEG derivatives retain their dimensions and have encoded-header and decoded-pixel comparison records. These checks supplement visual review; they do not certify live gameplay behavior.
+
+Check that a completed delivery still matches its recorded file hashes with:
+
+<syntaxhighlight lang="powershell">
+python -B -m enshrouded_data.map_tool verify `
+  --output "C:\MapExports\Enshrouded-26430625"
+</syntaxhighlight>
+
+=== Resume an interrupted run ===
+
+Rerun the original <code>generate</code> command with <code>--resume</code>, keeping the same game folder, package and options. Completed stages are checked before reuse. A changed completed file stops the run.
+
+An incomplete descriptor extraction or native geometry capture without its completion receipt requires a fresh output folder. Retain the failed run's diagnostics when reporting the problem.
+
+== Upload manually ==
+
+The generator prepares images and descriptions. It does not upload files or edit wiki pages.
+
+# Confirm that generation and verification completed successfully. Open <code>manual-upload.json</code> and review each suggested filename and image.
+# Use only files marked <code>upload_eligible: true</code>, and check the wiki's current size and image-processing limits. This release compares encoded file sizes against '''15 MiB per file'''; it does not check the live wiki.
+# Sign into your own wiki account. For an existing image, open its file page and choose '''Upload a new version'''. Match the filename exactly and preserve its current description unless you deliberately intend to update it.
+# For a new image, use [[Special:Upload]] and the corresponding generated <code>descriptions/*.wikitext</code> text after review. Do not replace an existing image with a differently named file unintentionally.
+# Compare each uploaded image with the intended local output and check the final rendered hall articles or world map. Retain the local build, generator and validation records for later contributors.
+
+=== Existing Hollow Halls filenames ===
+
+{| class="wikitable"
+! Hall !! Existing file
+|-
+| [[Springlands Hollow Halls]] || [[:File:Springlands Hollow Halls Map.png]]
+|-
+| [[Revelwood Hollow Halls]] || [[:File:Revelwood Hollow Halls Map.png]]
+|-
+| [[Nomad Highlands Hollow Halls]] || [[:File:Nomad Highlands Hollow Halls Map.png]]
+|-
+| [[Kindlewastes Hollow Halls]] || [[:File:Kindlewastes Hollow Halls Map.png]]
+|-
+| [[Albaneve Summits Hollow Halls]] || [[:File:Albaneve Summits Hollow Halls Map.png]]
+|-
+| [[Veilwater Basin Hollow Halls]] || [[:File:Veilwater Basin Hollow Halls Map.png]]
+|}
+
+Replacing those file versions updates their existing article references. Review [[Hollow Halls]] and all six hall articles after upload.
+
+=== Existing world tiles ===
+
+The wiki JPEG filenames are <code>0_0.jpg</code> through <code>7_7.jpg</code>. Use the corresponding files in <code>world/wiki/</code>, following the manifest's exact filename and position. Reusing these names preserves the existing background references.
+
+A differently named PNG does not replace an existing JPEG tile. Changing filenames, world bounds or the background definition requires a separate deliberate wiki change; protected definitions may require an administrator.
+
+The tested 20,480 × 20,480 world master is 188,561,736 bytes and exceeds the configured 15 MiB limit. Keep it as a local lossless master and use the tile output for the interactive map. An oversized master is marked ineligible. The tool does not silently resize or reduce quality to fit the limit. If any tile is ineligible, review that delivery before uploading it.
+
+== Report a problem ==
+
+Retain <code>failure.txt</code>, <code>run.json</code>, input verification and the relevant parser or native-helper log. Include the generator version, client build, selected options and failing stage in the report.
+
+Do not attach game archives, extracted game resources or private account files. A supported unmodified client and a fresh output folder are the baseline for reproducing a failure.

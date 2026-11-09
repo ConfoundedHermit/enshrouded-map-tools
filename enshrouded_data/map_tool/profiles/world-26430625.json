@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "build_id": "26430625",
+  "executable_sha256": "5d9ef2f140b8ed49e30dbee655841b89d08baec20f799a1817e171a18a850c77",
+  "world_extent": 10240,
+  "map_tile_count": [10, 10],
+  "zoom_scale": 8.0,
+  "packed_widths": [4, 4, 4],
+  "packed_alphas": [76, 127, 229],
+  "flame_threshold": 20,
+  "shaders": {
+    "vsShaderCode.spv": "5e12e9bf929521d4f7986d11135ad62f44b783dea8122b31335aeaa119553179",
+    "fsShaderCode.spv": "147d11eda00c683ae80c5c3723bee7f9caa5f2cc465e6a9d32566bad76df8d76"
+  },
+  "native_instructions": {
+    "0xd7c7b2": "f30f106710",
+    "0xd7c7c8": "f30f5e6758",
+    "0xd7c87f": "0f2fd4",
+    "0xd7c8ac": "f30f5cca",
+    "0xd7c8b8": "f30f5cda",
+    "0xd7c8bc": "f30f5ed9",
+    "0xd7c8fc": "f30f5cc1",
+    "0xd7c900": "f30f59c3",
+    "0xd7c904": "f30f58c1",
+    "0xd7c918": "f30f59cb",
+    "0xd7c91c": "f30f58ca",
+    "0xd7d1ec": "f30f101d8c3e6500",
+    "0xd7d1f4": "f30f1005443b6500",
+    "0xd7d216": "f30f2cc1",
+    "0xd7d2d3": "c7459800002041",
+    "0xd7d2da": "c745a4cdcccc3d"
+  },
+  "native_scalar_rvas": {
+    "width_scale": "0x13d1080",
+    "alpha_scale": "0x13d0d40",
+    "isoline_spacing": "0xd7d2d6",
+    "shroud_displacement": "0xd7d2dd"
+  },
+  "native_scalar_values": {
+    "width_scale": 16.0,
+    "alpha_scale": 255.0,
+    "isoline_spacing": 10.0,
+    "shroud_displacement": 0.10000000149011612
+  },
+  "method": "Original game vertex and fragment SPIR-V, native zoomScale 8 contour style, native SDR values and animation time zero; player exploration concealment and markers omitted."
+}

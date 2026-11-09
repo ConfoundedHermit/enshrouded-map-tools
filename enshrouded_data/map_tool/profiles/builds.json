@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "build_id": "26430625",
+      "mode": "client",
+      "executable_sha256": "5d9ef2f140b8ed49e30dbee655841b89d08baec20f799a1817e171a18a850c77",
+      "kfc_version": "1287369|^/game38/branches/release_1.0|2026-11-04T11:17:54.051725Z",
+      "parser_sha256": "b5384a926885a0b59da0a2475ff1fd1c2a0679156e2dbcdb52d1899aabc85b75",
+      "files": [
+        {
+          "name": "enshrouded.exe",
+          "size_bytes": 35476040,
+          "sha256": "5d9ef2f140b8ed49e30dbee655841b89d08baec20f799a1817e171a18a850c77"
+        },
+        {
+          "name": "enshrouded.kfc",
+          "size_bytes": 9396224,
+          "sha256": "2093a7cc0859ba2f878fc252a65c36b39605d7e1106e091c63809f6dea460bf5"
+        },
+        {
+          "name": "enshrouded.kfc_resources",
+          "size_bytes": 215052288,
+          "sha256": "2f54eb9e4677f129c4d527aa9b163d89d0aecee70f2b5b728d7bacaa239d91a7"
+        },
+        {
+          "name": "enshrouded_000.dat",
+          "size_bytes": 1060708352,
+          "sha256": "280d139febe69593cbfe35325a9a508ee5f2c5ea5d02ddeb44e13c8f19429e02"
+        },
+        {
+          "name": "enshrouded_001.dat",
+          "size_bytes": 1011748864,
+          "sha256": "c56833355fdea6a1963477378c0ab073419bf89c3ea0ae29939d4bed5dc15c76"
+        },
+        {
+          "name": "enshrouded_002.dat",
+          "size_bytes": 1009995776,
+          "sha256": "9be90242d92ce6c00e271fc36f816333c6698ecba700bfc9a6fe941d6c87618d"
+        },
+        {
+          "name": "enshrouded_003.dat",
+          "size_bytes": 1004273664,
+          "sha256": "57e2720f5dfb03d705402d870ba6cb1e6a49bf75ec8ded630e3f66fa3c74eefc"
+        },
+        {
+          "name": "enshrouded_004.dat",
+          "size_bytes": 1002700800,
+          "sha256": "393ac56a51fee87cd296458df252d7ac2fd2ddde6f315c282ce4eea300554a29"
+        },
+        {
+          "name": "enshrouded_005.dat",
+          "size_bytes": 1011863552,
+          "sha256": "086610bca06f3f3d0872a15fa3b9586de2451c88b183da82fda3955552641c1b"
+        },
+        {
+          "name": "enshrouded_006.dat",
+          "size_bytes": 1010012160,
+          "sha256": "613ea267a24b408bc3d61533228c99a097097b28c1c5d0e941849e8c977228e3"
+        },
+        {
+          "name": "enshrouded_007.dat",
+          "size_bytes": 1005117440,
+          "sha256": "aa9562383ae63981f92636bf8387dde971d135d5a7738db2a600ac54c048ffa3"
+        },
+        {
+          "name": "enshrouded_008.dat",
+          "size_bytes": 1037316096,
+          "sha256": "bc9dc743d5c00eb023b830120288caa704b6b6e7b21a1b145413df95eb2ea777"
+        },
+        {
+          "name": "enshrouded_009.dat",
+          "size_bytes": 1000910848,
+          "sha256": "fad65d82d8d0d5d787a71d29fbd5a0a294968433c83cdc44a95b5659e95bb845"
+        },
+        {
+          "name": "enshrouded_010.dat",
+          "size_bytes": 1000935424,
+          "sha256": "aa55d4a0fa9a86b1433cb591d4e995ac98418a5d16c18154915bf432c9ebec46"
+        },
+        {
+          "name": "enshrouded_011.dat",
+          "size_bytes": 1012752384,
+          "sha256": "ebf6f822fb8dfb6dd8d27390babca2e1a00a5d993053b994812f7a3e874b635e"
+        },
+        {
+          "name": "enshrouded_012.dat",
+          "size_bytes": 1054711808,
+          "sha256": "196d4309e6589172841e6e70415db196d1fb7a588d0ac3be6f81f9653bbfe056"
+        },
+        {
+          "name": "enshrouded_013.dat",
+          "size_bytes": 1000976384,
+          "sha256": "3c83ccd428b1e008581a4416dbfbcfa6087e8aa08ed51a2db1f7ef44543e1773"
+        },
+        {
+          "name": "enshrouded_014.dat",
+          "size_bytes": 1009950720,
+          "sha256": "e6ea81182d11c6633260a69b3889fb96d239bbbfa6c7602540201d11d5aaa60a"
+        },
+        {
+          "name": "enshrouded_015.dat",
+          "size_bytes": 1010335744,
+          "sha256": "a7e1b6d7e2f8438857bb51fc43a789673f8d967da955aace8a09cbbb664c2303"
+        },
+        {
+          "name": "enshrouded_016.dat",
+          "size_bytes": 1004216320,
+          "sha256": "99e2a18517297277acd0c8aa142bc40d930683cd79f734c500a2279d428680ab"
+        },
+        {
+          "name": "enshrouded_017.dat",
+          "size_bytes": 1033170944,
+          "sha256": "01554b4737acaa32de258a69305b8dc39534900314b94e5e3290403fad2416ae"
+        },
+        {
+          "name": "enshrouded_018.dat",
+          "size_bytes": 1013051392,
+          "sha256": "0b4e4d2a44e06a9cd496620fbd1abc0199daded6ff11552505c0009f170e9545"
+        },
+        {
+          "name": "enshrouded_019.dat",
+          "size_bytes": 1008046080,
+          "sha256": "63e18a160cf1b313b9026681473eaead34f3ba0a0577491048d99fb93102ec40"
+        },
+        {
+          "name": "enshrouded_020.dat",
+          "size_bytes": 1009111040,
+          "sha256": "1381e07d0b4ef46d05d09063d20895dc0a92c69bbfee5f2dab4275cc40899f90"
+        },
+        {
+          "name": "enshrouded_021.dat",
+          "size_bytes": 1006993408,
+          "sha256": "a379da6f79086218b29bcc3a023ee8b2acd292441ebaded3337b12e741833e00"
+        },
+        {
+          "name": "enshrouded_022.dat",
+          "size_bytes": 1013837824,
+          "sha256": "3731a7679605711e6617f850a8411f184bec804a64b2094f459a9d936cb56b1b"
+        },
+        {
+          "name": "enshrouded_023.dat",
+          "size_bytes": 1007153152,
+          "sha256": "58d449ae8f4c7fc9a8193608cb4120a28d68c56d832aeb787cefb55f28af9152"
+        },
+        {
+          "name": "enshrouded_024.dat",
+          "size_bytes": 1014304768,
+          "sha256": "820bd2f2abbc69bf076f804c78e874d984e0a35645f9cff4953266220f587b72"
+        },
+        {
+          "name": "enshrouded_025.dat",
+          "size_bytes": 1014571008,
+          "sha256": "adf6a0384a2fa55749e55b5747da6b7bba83c8faab2159f3365563ede405f7c9"
+        },
+        {
+          "name": "enshrouded_026.dat",
+          "size_bytes": 886738944,
+          "sha256": "8f644a51cb791e89e4242b6e7c813436bb17b6d7a6f3c5e79baaeb5141e74645"
+        },
+        {
+          "name": "enshrouded_027.dat",
+          "size_bytes": 1005875200,
+          "sha256": "500f93226a59084888b6bbfe25287f5741f682acbe329f52068763e5224c6cab"
+        },
+        {
+          "name": "enshrouded_028.dat",
+          "size_bytes": 1005129728,
+          "sha256": "3c856c42c792b72075555706298338022f580ab8b9b07e9db9d4083c2d0c6cef"
+        },
+        {
+          "name": "enshrouded_029.dat",
+          "size_bytes": 1004642304,
+          "sha256": "9b22153ce2e08c4588a55320159e997abbd9ac7186eafe7da38bd9250b0e6bde"
+        },
+        {
+          "name": "enshrouded_030.dat",
+          "size_bytes": 1005215744,
+          "sha256": "6ec19a6f2118bdb2894dfc0e3677aea79ebd15c3aef7ca1f6900b0de020007cf"
+        },
+        {
+          "name": "enshrouded_031.dat",
+          "size_bytes": 1011769344,
+          "sha256": "43af0a606ddaa88dacc4e5c0953d8c52d8adbd86421d03a91b37faf3f7b9ded3"
+        },
+        {
+          "name": "enshrouded_032.dat",
+          "size_bytes": 615276544,
+          "sha256": "2051ca075d01d9b57b288affec776f758392b808b93392c73cebd0a4852cc1fe"
+        },
+        {
+          "name": "enshrouded_033.dat",
+          "size_bytes": 1005031424,
+          "sha256": "65587c436c110d48beea7480b63823509f1941954abdfa2838ddd1641742984f"
+        },
+        {
+          "name": "enshrouded_034.dat",
+          "size_bytes": 1013829632,
+          "sha256": "26be2bd96be985e9b045fe9e43df2caa64e5e32a59e7c4b053dffdc75957af61"
+        },
+        {
+          "name": "enshrouded_035.dat",
+          "size_bytes": 1010716672,
+          "sha256": "028609d86134f233b5af329650d4e5540c0eb59806e1a17a634df7880e654521"
+        },
+        {
+          "name": "enshrouded_036.dat",
+          "size_bytes": 1003167744,
+          "sha256": "d8270dd95d9fc88ea15bddb2334070a844f18c7082843326954bd427cca4ba65"
+        },
+        {
+          "name": "enshrouded_037.dat",
+          "size_bytes": 768745472,
+          "sha256": "85e5f5503738da887b039fbb18a6feba5f66c43a310027599ff546e9208c0948"
+        },
+        {
+          "name": "enshrouded_038.dat",
+          "size_bytes": 1007353856,
+          "sha256": "dbce35b097fb3a78223aefc606c439d12ff6f60d323b6b7f5255583516aa51c8"
+        },
+        {
+          "name": "enshrouded_039.dat",
+          "size_bytes": 1007853568,
+          "sha256": "e4c6ab37a6de9cfcf69c8e185a24192a3615b673a57b502625b2abdf1c339e52"
+        },
+        {
+          "name": "enshrouded_040.dat",
+          "size_bytes": 1007644672,
+          "sha256": "e32fae5dfdb6ace5574112469bd00265e664adc3d80b6afb0699577816db2fd0"
+        },
+        {
+          "name": "enshrouded_041.dat",
+          "size_bytes": 580628480,
+          "sha256": "7a42163c0924804a2f50027575df7176fee96251a8b2a7cb29de3047fbc97eb7"
+        },
+        {
+          "name": "enshrouded_042.dat",
+          "size_bytes": 1096032256,
+          "sha256": "d394fa6b33a16b8988487fc7b8e81b510fbf2e2c4ca365c35ab98eccc6c63033"
+        },
+        {
+          "name": "enshrouded_043.dat",
+          "size_bytes": 1036374016,
+          "sha256": "70953ced1e0cabfbfb88839574bab20047cc687505f9f792bb1d146e2f1527b1"
+        },
+        {
+          "name": "enshrouded_044.dat",
+          "size_bytes": 678014976,
+          "sha256": "5bbf5adca1e8adad9da5b575691423f096185c1d3669887aac2a698ade4241c2"
+        },
+        {
+          "name": "enshrouded_045.dat",
+          "size_bytes": 1022074880,
+          "sha256": "4b1d2fe9dc7a31b65092b672b09c032f3406113b9338a05ce239994fc269d848"
+        },
+        {
+          "name": "enshrouded_046.dat",
+          "size_bytes": 1022107648,
+          "sha256": "b165cc9b446e5b6e1ed9ec5efdd8e9ee2d2248e6dc02278b17be32a63e9f1d18"
+        },
+        {
+          "name": "enshrouded_047.dat",
+          "size_bytes": 127414272,
+          "sha256": "553ef983437b9dc5ab20b053b12c843f32538b5ce0b7362ddefef005255fc4f6"
+        },
+        {
+          "name": "enshrouded_048.dat",
+          "size_bytes": 1004896256,
+          "sha256": "3d509d920715453eab08af7c86d86c8b8a3f326cecc31de9304775c0a0f9f0ee"
+        },
+        {
+          "name": "enshrouded_049.dat",
+          "size_bytes": 909414400,
+          "sha256": "f692e51364a2360567db001dd471d3947af903e9b44adb4486d69ebcdd212716"
+        },
+        {
+          "name": "enshrouded_050.dat",
+          "size_bytes": 1008664576,
+          "sha256": "a2dcb2ba69ec4036249983bb60fadd99948d325db87f01ba4b39af3b18a99eb8"
+        },
+        {
+          "name": "enshrouded_051.dat",
+          "size_bytes": 314626048,
+          "sha256": "321846d94e4d2f084d319f122a0988983352f8f8dd01a47e60f10a198723c803"
+        },
+        {
+          "name": "enshrouded_052.dat",
+          "size_bytes": 907784192,
+          "sha256": "74cc88c88af07238381b480ba1e51cfb5a3a48a7ee42cb7c88035ce609dc0a1f"
+        },
+        {
+          "name": "enshrouded_053.dat",
+          "size_bytes": 1039114240,
+          "sha256": "67bb49ee52b02eec32b5565dd72e79f598702ef64190383762086e3084d44c09"
+        },
+        {
+          "name": "enshrouded_054.dat",
+          "size_bytes": 29167616,
+          "sha256": "89271a82247d2cae2c7b67cce48b8ebb7e282689a997246465a17bcf8bde820e"
+        }
+      ],
+      "main_scene_guid": "509feadb-4c60-425f-9c7c-deeefd9b6920",
+      "map_guid": "01bcbd07-bdbf-41c0-9999-5d58fb1a3aa1",
+      "shader_guid": "7df551f7-ddd1-52b0-8ba6-d09be35dbccc",
+      "ui_guid": "46e14df6-fb8f-4f66-9463-e23b9e19e48e",
+      "resource_types": {
+        "keen::ecs::TemplateResource": 964069237,
+        "keen::SceneResource": 734432958,
+        "keen::SceneEntityChunkResource": 3741887066,
+        "keen::VoxelWorldResource": 1978957938,
+        "keen::UiMapResource": 3775288814,
+        "keen::UiTextureResource": 4192758167,
+        "keen::GpcResource": 1685465302,
+        "keen::FbUiBundle": 4277737656,
+        "keen::BalancingTable": 2476271431
+      },
+      "trust_basis": "Recorded match to locally cached Steam depot manifest7226436020230696061; upstreammanifest signature not independently verified."
+    }
+  ]
+}

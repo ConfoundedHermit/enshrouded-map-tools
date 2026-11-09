@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible map-generation problem.
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Generator version and client build
+      description: For example, generator 0.1.0 and unmodified client build 26430625.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps and selected options
+      description: Include map selection, world layout and pixel density. Use example paths if local paths are private.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+      description: Include the failing stage and relevant error text. Inspect logs before sharing; do not attach game resources, account files or credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows and Python versions; graphics device and driver if world rendering is involved.

@@ -1,0 +1,2 @@
+# Preserve source bytes used by the build receipts and packaged source hashes.
+* -text
