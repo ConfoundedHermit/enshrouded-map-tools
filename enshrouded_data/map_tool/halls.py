@@ -1,8 +1,7 @@
-"""Generate six flattened hall maps from a contributor's extracted game files.
+"""Extract hall controls, select enclosed floors and render flattened maps.
 
-All geometry, volumes and controls come from the supplied installation. The
-small supported-build profile contains identities and validation expectations;
-it supplies no geometry, floor masks, seed coordinates or historical exports.
+Geometry and scene controls come from the supplied installation; the build
+profile identifies halls and defines validation expectations.
 """
 from array import array
 from collections import Counter, defaultdict
@@ -51,7 +50,7 @@ def _source(path, root):
 
 
 def load_profile(profile):
-    """Accept a selected build profile or the halls identity object itself."""
+    """Resolve hall identities from a build profile or an identity object."""
     if 'halls' in profile and isinstance(profile['halls'], list) and 'scene_guid' in profile:
         return profile
     identity = profile.get('halls_profile', 'halls-' + str(profile['build_id']) + '.json')
@@ -69,7 +68,7 @@ def _one(paths, description):
 
 
 def bind_arrivals(areas, teleporters, profile):
-    """Bind reciprocal native IDs to a unique authored playable-area group."""
+    """Bind each reciprocal entrance pair to a unique playable-area group."""
     by_id = defaultdict(list)
     for row in teleporters:
         if row['teleporter'].get('TeleporterId'):
@@ -108,7 +107,7 @@ def bind_arrivals(areas, teleporters, profile):
 
 
 def collect_controls(raw_root, profile, progress=print):
-    """Discover fresh scene/template controls; return normalized layout/chests."""
+    """Decode hall volumes, scene controls and loot-container ownership."""
     raw_root = Path(raw_root)
     profile = load_profile(profile)
     scene_id = profile['scene_guid']
@@ -116,6 +115,7 @@ def collect_controls(raw_root, profile, progress=print):
     scene = _read(scene_path)
     if scene.get('$guid') != scene_id:
         raise ValueError('Wrong main-scene identity')
+    # Playable areas are fixed-point world bounds grouped by map-marker ID.
     areas = []
     for index, row in enumerate(scene['resetPlayersOutOfBounds']['playableAreas']):
         if row['flags'] != ['BigDungeon']:
@@ -124,6 +124,7 @@ def collect_controls(raw_root, profile, progress=print):
             'flags': row['flags'],
             'min': {a: row['areaMin'][a] / 2 ** 32 for a in 'xyz'},
             'max': {a: row['areaMax'][a] / 2 ** 32 for a in 'xyz'}})
+    # Template components provide defaults for per-entity spawn overrides.
     templates = {}
     sources = [_source(scene_path, raw_root)]
     for path in sorted((raw_root / 'TemplateResource').glob('*.json')):
@@ -139,8 +140,7 @@ def collect_controls(raw_root, profile, progress=print):
     chunk_paths = sorted((raw_root / 'SceneEntityChunkResource').glob(scene_id + '*.json'))
     if len(chunk_paths) != profile['expected_scene_chunk_count']:
         raise ValueError('Incomplete main-scene entity chunks')
-    # Discover the entrance IDs first. Entity indices and positions are read
-    # directly from this extraction rather than retained from a prior run.
+    # Resolve entrance ownership before assigning other scene entities to halls.
     teleports = []
     chunks = []
     for path in chunk_paths:
@@ -198,6 +198,8 @@ def collect_controls(raw_root, profile, progress=print):
                     'template_guid': guid, 'debug_name': template['name'],
                     'hall_candidates': candidates, 'levels': levels,
                     'teleporter': teleporter, 'components': selected})
+            # Keep recognizable chests and explicit fixed-loot containers;
+            # retain ambiguous origins separately instead of assigning a hall.
             if 'keen::ecs::InventorySetup' not in defaults:
                 continue
             short = {key.rsplit('::', 1)[-1]: value for key, value in merged.items()}
@@ -238,6 +240,7 @@ def collect_controls(raw_root, profile, progress=print):
 
 
 def _load_arrays(root):
+    """Load six-uint16 interval records and their parallel uint32 labels."""
     values, labels = array('H'), array('I')
     intervals, components = root / 'air-intervals.bin', root / 'surface-components.bin'
     if intervals.stat().st_size % 12 or components.stat().st_size * 3 != intervals.stat().st_size:
@@ -250,6 +253,7 @@ def _load_arrays(root):
 
 
 def _capture(context, output, layout, profile, progress):
+    """Extract enclosed air intervals and label connected floor components."""
     scene_id = profile['scene_guid']
     candidates = []
     for path in (Path(context.raw_root) / 'VoxelWorldResource').glob(scene_id + '*.json'):
@@ -263,6 +267,7 @@ def _capture(context, output, layout, profile, progress):
             or any(world['origin'][axis] != 0 for axis in 'xyz')
             or len(world['voxelLevels']) != 7 or len(world['voxelLevels'][6]['tiles']) != 6400):
         raise ValueError('Unsupported solid voxel layout')
+    # Pad the combined hall bounds by 16 metres before selecting solid tiles.
     boxes = [box for hall in layout['halls'] for box in hall['playable_areas']]
     xmin = max(0, math.floor(min(box['min']['x'] for box in boxes) * 2) - 32)
     xmax = min(20480, math.ceil(max(box['max']['x'] for box in boxes) * 2) + 32)
@@ -276,6 +281,7 @@ def _capture(context, output, layout, profile, progress):
         raise ValueError('Incomplete prior hall capture; use a fresh halls directory')
     receipts = []
     arguments = [str(Path(context.hall_helper).resolve()), '--intervals', str(intervals.resolve())]
+    # Stream the grid header and length-prefixed tiles to the native helper.
     with (output / 'interval-extraction.log').open('wb') as log:
         process = subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=log, stderr=log)
         try:
@@ -315,7 +321,7 @@ def _capture(context, output, layout, profile, progress):
 
 
 def verify_halls(output):
-    """Decode all delivered PNGs and verify their source geometry/projections."""
+    """Verify image and floor hashes, sample counts and projection coverage."""
     from .delivery import verify_png
     output = Path(output)
     result = _read(output / 'halls.json')
@@ -346,7 +352,7 @@ def verify_halls(output):
 
 
 def run_halls(context, output, progress=print):
-    """Run fresh control extraction, native segmentation and flattened rendering."""
+    """Generate hall maps, reusing validated completed stages when available."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     if (output / 'halls.json').exists():
@@ -355,7 +361,7 @@ def run_halls(context, output, progress=print):
     profile = load_profile(context.profile)
     if (output / 'layout-controls.json').exists():
         layout, chests = _read(output / 'layout-controls.json'), _read(output / 'chest-controls.json')
-        # Resume only against the exact fresh descriptors used for the controls.
+        # Reused controls must still match their extracted source descriptors.
         for receipt in layout['sources']:
             if _sha(Path(context.raw_root) / receipt['path']) != receipt['sha256']:
                 raise ValueError('Extracted hall descriptor changed during resume')
@@ -364,6 +370,7 @@ def run_halls(context, output, progress=print):
         layout, chests = collect_controls(context.raw_root, profile, progress)
         _write(output / 'layout-controls.json', layout)
         _write(output / 'chest-controls.json', chests)
+    # Reuse captured geometry only when both binary arrays retain their hashes.
     if (output / 'geometry.json').exists():
         geometry = _read(output / 'geometry.json')
         for key in ('intervals', 'components'):
@@ -374,6 +381,7 @@ def run_halls(context, output, progress=print):
     values, labels = _load_arrays(output)
     progress(f'Selecting supported hall floors from {len(labels):,} enclosed intervals')
     supported, selection = select_floors(values, labels, layout, chests)
+    # Clip supported components to each hall's authored volumes before rendering.
     delivered = []
     for index, (hall, binding) in enumerate(zip(layout['halls'], profile['halls'])):
         accepted = {component for component, owners in supported.items() if index in owners}
@@ -417,6 +425,7 @@ def run_halls(context, output, progress=print):
                 source_floor_count=count, source_floors=_source(floor_path, output),
                 landmark_bindings=markers)
             _write(receipt_path, report)
+        # Compare rendered geometry and pixels with the supported build profile.
         for profile_key, actual in (
                 ('expected_dimensions', report['dimensions']),
                 ('expected_rgb_sha256', report['rgb_sha256']),

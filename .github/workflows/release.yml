@@ -5,8 +5,7 @@ on:
     types: [published]
   workflow_dispatch:
 
-# Building and testing require no repository write access. Only the final
-# release attachment job can write, and manual builds never run that job.
+# Only the published-release attachment job receives repository write access.
 permissions:
   contents: read
 

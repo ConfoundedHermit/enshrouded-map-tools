@@ -1,9 +1,7 @@
 """Render one north-up map per Hollow Hall from all selected floor surfaces.
 
-The native half-metre floor samples retain their X/Z footprint. The highest
-surface supplies the base relief; lower surfaces blend into the same pixels,
-with restrained edge accents. This is a flattened projection, so overlapping
-levels cannot be read as separate routes or gameplay storeys.
+The highest half-metre surface supplies relief; lower surfaces blend into the
+same X/Z pixels. Overlap does not establish a connection between floors.
 """
 from __future__ import annotations
 
@@ -21,11 +19,10 @@ from .hall_render import (
 
 
 def flatten_surfaces(samples, bounds):
-    """Group every in-bounds surface in deterministic upper-to-lower order.
+    """Group in-bounds surfaces by descending height within each X/Z column.
 
-    Returned layers use native local pixel coordinates, one pixel per cell.
-    Their union is the original X/Z projection, and every supplied sample is
-    accounted for as either an in-bounds contributor or an excluded sample.
+    Layers use north-up local pixels at one pixel per cell. The receipt records
+    contributing and excluded counts plus deterministic projection/sample hashes.
     """
     bx, bz, ex, ez = _bounds(bounds)
     columns = {}
@@ -47,6 +44,7 @@ def flatten_surfaces(samples, bounds):
     layers = []
     sample_hash = hashlib.sha256()
     union_hash = hashlib.sha256()
+    # Each layer holds the same depth rank across columns, not a connected floor.
     for (gx, gz), values in sorted(columns.items()):
         values.sort(reverse=True)
         union_hash.update(struct.pack('<qq', gx, gz))
@@ -77,7 +75,7 @@ def flatten_surfaces(samples, bounds):
 
 
 def _lower_colour(surface, position, range_y, cell_size):
-    """Use the existing green elevation palette and emphasize lower edges."""
+    """Shade a lower surface by elevation, exposed edges and local relief."""
     x, y = position
     floor, _ = surface[position]
     lo, hi = range_y
@@ -107,8 +105,7 @@ def _draw_flat_surface(canvas, origin, layers, range_y, cell_size):
         for position in layer:
             colour, edge = _lower_colour(layer, position, range_y, cell_size)
             lower_edges += edge
-            # Lower fragments remain legible while the upper floor retains its
-            # visual weight. Deeper overlaps have progressively softer accents.
+            # Edge accents are stronger; opacity decreases with column depth.
             opacity = (.36 if edge else .22) * .75 ** (rank - 1)
             x, y = ox + position[0], oy + position[1]
             offset = (y * canvas.width + x) * 3
@@ -126,11 +123,10 @@ def _draw_flat_surface(canvas, origin, layers, range_y, cell_size):
 def render_flat_map(path, hallname, bounds, samples, markers=(), *,
                     build='26430625', cell_size=.5, pixels_per_metre=2.0,
                     note='Static geometry | overlapping surfaces combined'):
-    """Write a fresh single-panel PNG and return its complete geometry receipt.
+    """Write a new single-panel PNG and return projection and pixel metadata.
 
-    Scene markers use continuous cell coordinates, independent of their former
-    elevation-panel assignment. The retained native scale is one pixel per
-    half-metre sample, or two pixels per metre; no footprint is downsampled.
+    Bounds are half-open cell coordinates. Scene markers use continuous cell
+    coordinates. The fixed scale is one pixel per half-metre sample.
     """
     path = Path(path)
     if path.exists():
@@ -144,6 +140,7 @@ def render_flat_map(path, hallname, bounds, samples, markers=(), *,
     markers = list(markers)
     ppc = cell_size * pixels_per_metre
     w, h, position = _projection(bounds, ppc)
+    # Reserve the title, map panel and footer around the native-size projection.
     pad = 24
     panel_width = max(440, w + pad * 2)
     panel_height = h + 145
@@ -175,6 +172,7 @@ def render_flat_map(path, hallname, bounds, samples, markers=(), *,
                 PALETTE['muted'], 1)
     ox, oy = left + (panel_width - w) // 2, top + 98
     bx, bz, ex, ez = bounds
+    # Grid lines are aligned to world coordinates at 25-metre intervals.
     grid_step = round(25 / cell_size)
     for gx in range(math.ceil(bx / grid_step) * grid_step, ex, grid_step):
         x = ox + gx - bx
@@ -198,6 +196,7 @@ def render_flat_map(path, hallname, bounds, samples, markers=(), *,
         placed.append({'kind': kind, 'label': label, 'world_cells': [gx, gz],
                        'y_cells': marker.get('y_cells'), 'source_marker_index': source_marker_index,
                        'pixel': [x, y], 'label_box_pixels': label_box})
+    # Record coincident markers even though their symbols share the same pixels.
     coincident = {}
     for index, marker in enumerate(placed):
         coincident.setdefault(tuple(marker['world_cells']), []).append(index)
@@ -208,6 +207,7 @@ def render_flat_map(path, hallname, bounds, samples, markers=(), *,
     canvas.text(left + pad, top + panel_height - 27,
                 f'{(ex - bx) * cell_size:g} X {(ez - bz) * cell_size:g} M',
                 PALETTE['muted'], 2)
+    # The footer shares the map's physical scale and lists present marker kinds.
     footer_y = header_height + panel_height + 22
     length = 50
     bar_width = round(length * pixels_per_metre)
@@ -228,6 +228,7 @@ def render_flat_map(path, hallname, bounds, samples, markers=(), *,
         canvas.text(pad, footer_y + 28 + i * 21, line, PALETTE['muted'], 2)
     canvas.text(pad, height - 24,
                 f'ENSHROUDED | BUILD {build} | NORTH = +Z / EAST = +X', PALETTE['muted'], 1)
+    # Check decoded pixels against the raster hash after writing the PNG.
     digest = hashlib.sha256(canvas.rgb).hexdigest()
     path.parent.mkdir(parents=True, exist_ok=True)
     png_from_rgb(path, width, height,

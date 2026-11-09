@@ -1,14 +1,9 @@
-"""Compose geometry-derived Hollow Halls floor plans as standalone PNG atlases.
+"""Raster drawing primitives and panel-based Hollow Halls PNG rendering.
 
-Coordinates are integer half-metre cells on the game's X/Z plane. A sample is
-``(global_x, global_z, floor_y, ceiling_y)``; ``floor_y`` is the first air cell
-above the supporting solid, and ``ceiling_y`` is the exclusive air-column end.
-Panels have ``range_y=[minimum, exclusive_maximum]``, ``samples`` and optionally
-``label`` and cropped ``bounds=[min_x,min_z,max_x,max_z]``. The renderer makes no
-claims about traversability, doors or connections between elevation panels.
-
-Only the Python standard library and the project's existing lossless PNG codec
-are used. Its small embedded font makes the export portable and reproducible.
+Samples are ``(global_x, global_z, floor_y, ceiling_y)`` in grid cells, half a
+metre by default. ``floor_y`` is the first air cell above solid support;
+``ceiling_y`` is the exclusive air-column end. Panels display supplied samples
+without inferring traversability or connections between elevations.
 """
 from __future__ import annotations
 
@@ -37,7 +32,7 @@ PALETTE = {
 }
 
 
-# Original 5 by 7 pixel lettering, rows encoded as five-bit integers.
+# Five-by-seven pixel glyphs, with each row encoded as a five-bit integer.
 _FONT = {
     'A': (14,17,17,31,17,17,17), 'B': (30,17,17,30,17,17,30),
     'C': (14,17,16,16,16,17,14), 'D': (30,17,17,17,17,17,30),
@@ -69,6 +64,7 @@ _FONT = {
 
 
 class _Canvas:
+    """Mutable row-major RGB raster with clipped drawing primitives."""
     def __init__(self, width, height, color):
         self.width, self.height = width, height
         self.rgb = bytearray(bytes(color) * (width * height))
@@ -84,6 +80,7 @@ class _Canvas:
             self.rgb[offset:offset + len(row)] = row
 
     def line(self, x0, y0, x1, y1, color, thickness=1):
+        """Draw an inclusive line using Bresenham's integer error steps."""
         x0,y0,x1,y1 = map(round, (x0,y0,x1,y1))
         dx,dy = abs(x1-x0), -abs(y1-y0)
         sx,sy = (1 if x0<x1 else -1), (1 if y0<y1 else -1)
@@ -134,6 +131,7 @@ def _wrap(text, width, scale=2):
 
 
 def _bounds(bounds):
+    """Validate half-open cell bounds ordered as min X, min Z, max X, max Z."""
     if len(bounds)!=4 or any(type(n) is not int for n in bounds):
         raise ValueError('Bounds must be four integer global cell coordinates')
     if bounds[2]<=bounds[0] or bounds[3]<=bounds[1]:
@@ -153,11 +151,10 @@ def _projection(bounds, pixels_per_cell):
 
 
 def _surface(samples, bounds, pixels_per_cell):
-    """Rasterize native cell extents without filling unsampled gaps.
+    """Rasterize the highest surface in each sampled X/Z column.
 
-    Downsampling averages elevations and conservatively retains the lowest
-    clearance. More than one vertical surface per native column is reported;
-    the highest surface is visible in the two-dimensional panel.
+    Pixels covered by multiple cells average their elevations and retain the
+    minimum clearance. Return pixel values, sample count and extra column samples.
     """
     bx,bz,ex,ez=bounds
     columns={}
@@ -204,6 +201,7 @@ def _mix(a,b,t):
 
 
 def _draw_surface(canvas, origin, surface, range_y, cell_size):
+    """Shade raster samples by elevation, exposed edges and local relief."""
     ox,oy=origin
     lo,hi=range_y
     palette=PALETTE
@@ -214,7 +212,7 @@ def _draw_surface(canvas, origin, surface, range_y, cell_size):
         if any(neighbour is None for neighbour in neighbours):
             color=_mix(color,palette['edge'],.62)
         else:
-            # A restrained relief accent; 5 m contours follow sampled geometry.
+            # Accent local slopes and crossings of five-metre elevation bands.
             relief=max(-8,min(8,(neighbours[0][0]-neighbours[2][0])*cell_size))
             color=tuple(max(0,min(255,round(channel+relief))) for channel in color)
             level=math.floor(floor*cell_size/5)
@@ -224,6 +222,7 @@ def _draw_surface(canvas, origin, surface, range_y, cell_size):
 
 
 def _marker_visible(marker, panel, panel_index):
+    """Use explicit panel membership, falling back to the marker's elevation."""
     if 'panels' in marker:
         return panel_index in marker['panels']
     y=marker.get('y_cells')
@@ -231,6 +230,7 @@ def _marker_visible(marker, panel, panel_index):
 
 
 def _draw_marker(canvas,x,y,kind,label,box):
+    """Draw a landmark and return its optional label rectangle."""
     color=PALETTE.get(kind,PALETTE['checkpoint'])
     canvas.circle(x,y,8,PALETTE['panel'])
     canvas.circle(x,y,6,color)
@@ -261,16 +261,13 @@ def _draw_marker(canvas,x,y,kind,label,box):
 def render_atlas(path, hallname, bounds, panels, markers=(), *, build='26430625',
                  cell_size=.5, pixels_per_metre=1.0, columns=None,
                  note='Geometry-derived map | floors grouped by elevation'):
-    """Write a fresh, independently decoded PNG and return its geometry receipt.
+    """Write a new atlas PNG, verify decoded pixels and return panel metadata.
 
-    ``bounds`` and optional per-panel bounds use an exclusive maximum. All
-    panels share the requested physical pixel scale even when independently
-    cropped. Markers contain continuous world coordinates divided by
-    ``cell_size`` as ``gx``, ``gz``, optional ``y_cells``, ``kind``
-    (entrance/exit/checkpoint/portal), ``label`` and optional zero-based ``panels``.
-    Unlike sample indices, marker coordinates are exact scene positions.
-    Elevation ranges are half-open intervals in cells, not metres. The returned
-    panel transforms specify the origin and physical scale for offline checks.
+    Each panel supplies ``samples`` and a half-open ``range_y`` in cells, with
+    optional ``label`` and ``bounds``. Bounds are half-open and all panels share
+    the requested physical pixel scale. Callers select each panel's samples.
+    Markers use continuous cell coordinates (``gx``, ``gz``, optional ``y_cells``),
+    ``kind``, ``label`` and optional zero-based ``panels`` membership.
     """
     path=Path(path)
     if path.exists():
@@ -283,6 +280,7 @@ def render_atlas(path, hallname, bounds, panels, markers=(), *, build='26430625'
     panels=list(panels)
     markers=list(markers)
     ppc=cell_size*pixels_per_metre
+    # Size each crop at the shared physical scale before arranging the panels.
     prepared=[]
     for index,panel in enumerate(panels):
         band=panel.get('range_y',())
@@ -316,12 +314,13 @@ def render_atlas(path, hallname, bounds, panels, markers=(), *, build='26430625'
     subtitle=f'HOLLOW HALLS  /  {len(panels)} ELEVATION PANELS'
     canvas.text(pad,34+len(title_lines)*29,subtitle,PALETTE['muted'],2)
     canvas.line(pad,header_height-14,width-pad,header_height-14,PALETTE['border'])
-    # The compass describes the game world X/Z projection used in every panel.
+    # All panels use the same north-up X/Z orientation.
     cx,cy=width-65,43
     canvas.text(cx-5,cy-21,'N',scale=2)
     canvas.line(cx,cy+23,cx,cy,PALETTE['ink'],2)
     canvas.line(cx,cy,cx-7,cy+13,PALETTE['ink'],2)
     canvas.line(cx,cy,cx+7,cy+13,PALETTE['ink'],2)
+    # Draw each panel's world-aligned grid, surfaces and applicable landmarks.
     receipts=[]
     grid_step=max(1,round(25/cell_size))
     for row in prepared:
@@ -378,7 +377,7 @@ def render_atlas(path, hallname, bounds, panels, markers=(), *, build='26430625'
                          'source_samples':native_samples,'raster_surface_pixels':len(surface),
                          'stacked_column_samples':stacked,'markers':placed})
     footer_y=header_height+rows*panel_height+(rows-1)*gap+22
-    # A physical scale bar is shared by every elevation panel, irrespective of crop.
+    # Choose a shared scale bar that fits within the footer's target width.
     target=120/pixels_per_metre
     length=next((n for n in (100,50,25,10,5,1) if n<=target),1)
     bar_width=round(length*pixels_per_metre)
@@ -396,6 +395,7 @@ def render_atlas(path, hallname, bounds, panels, markers=(), *, build='26430625'
     for i,line in enumerate(footer_lines):
         canvas.text(pad,footer_y+28+i*21,line,PALETTE['muted'],2)
     canvas.text(pad,height-24,f'ENSHROUDED  |  BUILD {build}  |  NORTH = +Z  /  EAST = +X',PALETTE['muted'],1)
+    # Check decoded pixels against the raster hash after writing the PNG.
     digest=hashlib.sha256(canvas.rgb).hexdigest()
     path.parent.mkdir(parents=True,exist_ok=True)
     png_from_rgb(path,width,height,

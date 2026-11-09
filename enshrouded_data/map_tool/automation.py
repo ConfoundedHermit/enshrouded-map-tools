@@ -1,8 +1,4 @@
-"""Build a release from a clean source checkout, with verified dependencies.
-
-Unlike the offline portable builder, this developer command downloads pinned
-build dependencies. It never reads game files or needs a graphics device.
-"""
+"""Download pinned dependencies, build and test a release from a clean checkout."""
 import argparse
 import hashlib
 import json
@@ -48,7 +44,7 @@ def _https(url):
 
 
 def fetch_verified(url, destination, checksum, size_bytes=None, opener=urlopen):
-    """Keep good cached files, reject changed ones, and atomically commit downloads."""
+    """Reuse pinned cache entries or commit a verified HTTPS download."""
     _https(url)
     destination = Path(destination)
     if destination.exists() or destination.is_symlink():
@@ -75,8 +71,7 @@ def fetch_verified(url, destination, checksum, size_bytes=None, opener=urlopen):
                     output.write(chunk)
             if checksum_state.hexdigest() != checksum or (size_bytes is not None and total != size_bytes):
                 raise ValueError('Downloaded dependency differs from its pinned SHA-256 or size: ' + url)
-        # This command runs in a private build directory; never replace a cache
-        # file that appeared while the download was being checked.
+        # Preserve a cache file that appeared while the download was verified.
         if destination.exists() or destination.is_symlink():
             raise ValueError('Dependency destination appeared during download.')
         temporary.rename(destination)
@@ -87,11 +82,10 @@ def fetch_verified(url, destination, checksum, size_bytes=None, opener=urlopen):
 
 
 def _zip_members(archive, max_bytes=256 * 1024 * 1024):
-    """Validate all names before writing, including Windows aliases and links."""
+    """Reject unsafe names, file types and extraction sizes before any writes."""
     members, seen, total = [], set(), 0
     for info in archive.infolist():
-        # ZipInfo normalizes backslashes on Windows and truncates NUL names.
-        # Validate the original header text before either transformation.
+        # Check original names for backslashes and NULs hidden by normalization.
         name = info.orig_filename
         parts = PurePosixPath(name).parts
         if ('\\' in name or ':' in name or '\x00' in name or not parts or
@@ -118,6 +112,7 @@ def _zip_members(archive, max_bytes=256 * 1024 * 1024):
 
 
 def extract_verified_zip(archive_path, destination, expected_root=None):
+    """Extract validated members into a fresh directory, optionally checking its root."""
     destination = Path(destination).resolve()
     if destination.exists():
         raise ValueError('Extraction requires a fresh destination: ' + str(destination))
@@ -140,10 +135,10 @@ def extract_verified_zip(archive_path, destination, expected_root=None):
 
 
 def _parser_source(pin, destination, dependencies, progress):
+    """Obtain the exact pinned source ZIP from Git or a verified release archive."""
     if destination.exists():
         return build._checked_file(destination, pin['source_archive_sha256'], 'pinned parser source archive')
-    # Git archive normally reproduces the original ZIP. Git/zlib versions can
-    # change ZIP bytes; a different archive never weakens the package hash pin.
+    # Git and zlib versions can change ZIP bytes for the same source commit.
     repository = dependencies / 'parser-source-git'
     generated = dependencies / 'parser-source-generated.zip'
     if repository.exists() or generated.exists():
@@ -178,6 +173,7 @@ def _parser_source(pin, destination, dependencies, progress):
 
 
 def prepare_dependencies(source, dependencies, progress=print):
+    """Verify or download the parser, its source and the locked Vulkan headers."""
     source, dependencies = Path(source).resolve(), Path(dependencies).resolve()
     dependencies.mkdir(parents=True, exist_ok=True)
     lock, _ = build._lock(source)
@@ -197,6 +193,7 @@ def prepare_dependencies(source, dependencies, progress=print):
 
 
 def source_commit(source):
+    """Identify a clean checkout, rejecting tracked changes and untracked files."""
     result = subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain', '--untracked-files=all'], text=True)
     if result.strip():
         raise ValueError('Release builds require a clean source checkout, including untracked files.')
@@ -207,7 +204,7 @@ def source_commit(source):
 
 
 def verify_package_sources(source, commit):
-    """Every public source must be a regular file in the captured commit."""
+    """Require every packaged source path to be a regular file in the captured commit."""
     sources = build.package_sources(source)
     tree = subprocess.check_output(['git', '-C', str(source), 'ls-tree', '-rz',
         commit, '--', '.'], text=True, encoding='utf-8')
@@ -225,7 +222,7 @@ def verify_package_sources(source, commit):
 
 
 def write_assets(output, archive, tag, commit, version=__version__):
-    """Bind the exact two public assets to a version and checked-out commit."""
+    """Write the ZIP checksum and bind both release assets to their tag and commit."""
     output, archive = Path(output).resolve(), Path(archive).resolve()
     release_tag(tag, version)
     expected = 'EnshroudedMaps-' + version + '-Windows-x64.zip'
@@ -244,13 +241,14 @@ def write_assets(output, archive, tag, commit, version=__version__):
 
 
 def build_release(output, dependencies, source=build.SOURCE_ROOT, tag=None, progress=print):
+    """Build, test and smoke-check a release before recording its verified assets."""
     tag = release_tag(tag)
     source, output = Path(source).resolve(), Path(output).resolve()
     commit = source_commit(source)
     verify_package_sources(source, commit)
     build._fresh_output(output, source)
-    # Keep build/dependency artifacts out of the source and final package.
     output.mkdir(parents=True)
+    # Exercise the newly built JPEG helper in the test suite before packaging.
     deps = prepare_dependencies(source, dependencies, progress)
     helpers = build.build_helpers(output / 'helpers', source=source,
         vulkan_headers=deps['vulkan_headers'], progress=progress)
@@ -263,6 +261,7 @@ def build_release(output, dependencies, source=build.SOURCE_ROOT, tag=None, prog
     package = build.build_package(output / name, helpers, source=source, progress=progress, **deps)
     archive = output / (name + '.zip')
     build.zip_package(package, archive)
+    # Check the packaged CLI and launcher from a fresh extraction of the release ZIP.
     clean = extract_verified_zip(archive, output / 'package-smoke', expected_root=name) / name
     bundle = load_bundle(clean)
     if bundle['version'] != __version__:
@@ -273,8 +272,7 @@ def build_release(output, dependencies, source=build.SOURCE_ROOT, tag=None, prog
     command_shell = Path(os.environ.get('SystemRoot', 'C:/Windows')) / 'System32/cmd.exe'
     subprocess.run([str(command_shell), '/d', '/c', 'EnshroudedMaps.cmd --help'],
         cwd=clean, env=environment, check=True)
-    # Confirm tests/building did not modify any tracked source after provenance
-    # was captured. All generated files should live in ignored directories.
+    # Recheck source cleanliness and commit before recording release provenance.
     if source_commit(source) != commit:
         raise ValueError('The source commit changed during the release build.')
     return write_assets(output, archive, tag, commit)

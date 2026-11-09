@@ -1,4 +1,4 @@
-"""Strict decoding of the supported scene position and spawn-override layouts."""
+"""Decode packed scene positions and indexed entity spawn overrides."""
 
 import math
 
@@ -6,6 +6,7 @@ import math
 
 
 def position_world(transform):
+    """Convert paired uint16 words from signed 16.16 fixed point to metres."""
     result={}
     for axis in 'XYZ':
         low,high=transform['position'+axis+'0'],transform['position'+axis+'1']
@@ -18,7 +19,7 @@ def position_world(transform):
 
 
 def spawn_overrides(data,index):
-    """Retain exact indexed values; reject unknown masks/layouts/indices."""
+    """Decode component and masked overrides, rejecting unsupported layouts."""
     if index<0:
         raise ValueError('Negative scene entity index')
     if index>=len(data['entries']):
@@ -33,6 +34,7 @@ def spawn_overrides(data,index):
         nonlocal cursor
         if cursor+size>len(raw):raise ValueError('Truncated scene spawn indices')
         value=int.from_bytes(raw[cursor:cursor+size],'little');cursor+=size;return value
+    # Component count precedes its optional start index and masked array indices.
     count=integer(1)
     first=integer(2) if count else 0
     if first+count>len(data['components']):raise ValueError('Scene component override range outside array')
@@ -45,13 +47,13 @@ def spawn_overrides(data,index):
         handled.update(present);selected=integer(size)
         if selected>=len(data[field]):raise ValueError('Scene spawn index outside '+field)
         result[field]={'index':selected,'value':data[field][selected]}
+    # Masked fields are serialized in this order; grouped flags share one index.
     selection(['TriggerRange','TriggerRange2','TriggerRange3'],'triggerRanges',2)
     selection(['EnemySettings'],'enemySettings',1)
     selection(['RandomSpawnerSetting_AllowUpScaling','RandomSpawnerSetting_AllowDownScaling','RandomSpawnerSetting_MinSpawnerAmount'],'randomSpawnerSettings',1)
     selection(['Level'],'levels',1)
     selection(['EnemyMarkerTag'],'enemyMarkerTags',1)
-    # Both teleporter references use the shared locaTags array, retaining their
-    # separate roles even when they point to the same localized string.
+    # Teleporter identity and destination are separate indices into locaTags.
     for flag in ['TeleporterId','TeleportTargetId']:
         if flag in flags and flag not in handled:
             selected=integer(1);handled.add(flag)

@@ -24,6 +24,7 @@ def digest(path):
 
 
 def validate_files(directory, tag, commit):
+    """Verify the complete artifact inventory, hashes and tested release identity."""
     checked(TAG.fullmatch(tag) and SHA.fullmatch(commit), 'Invalid release tag or source commit.')
     root = Path(directory).resolve()
     manifest = json.loads((root/'release-assets.json').read_text(encoding='utf-8'))
@@ -52,6 +53,8 @@ def validate_files(directory, tag, commit):
 
 
 class GitHub:
+    """Authenticated API and asset-upload requests for one repository."""
+
     def __init__(self, repository, token, opener=urlopen):
         checked(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository), 'Invalid repository.')
         checked(bool(token), 'GH_TOKEN is required for release attachment.')
@@ -64,8 +67,7 @@ class GitHub:
         if content_type:
             headers['Content-Type'] = content_type
         request = Request(url, data=data, headers=headers, method='POST' if data is not None else 'GET')
-        # All URLs are constructed here or validated against the exact upload
-        # endpoint. This client never downloads external asset URLs with a token.
+        # Callers use repository API URLs or the validated release upload endpoint.
         with self.opener(request, timeout=120) as response:
             return json.load(response)
 
@@ -78,6 +80,7 @@ class GitHub:
 
 
 def tag_commit(client, tag):
+    """Resolve lightweight or nested annotated tags to a commit, with a depth limit."""
     ref = client.api('/git/ref/tags/'+quote(tag, safe=''))
     checked(ref.get('ref') == 'refs/tags/'+tag, 'GitHub returned a different tag reference.')
     obj = ref['object']
@@ -91,6 +94,7 @@ def tag_commit(client, tag):
 
 
 def existing_assets(client, release_id):
+    """Read the bounded, paginated asset list and require unique remote names."""
     rows = []
     for page in range(1, 12):
         batch = client.api(f'/releases/{release_id}/assets?per_page=100&page={page}')
@@ -108,6 +112,7 @@ def matches(remote, local):
 
 
 def attach(directory, release_id, tag, commit, client):
+    """Upload missing tested assets, preserving identical assets and rejecting conflicts."""
     root, rows = validate_files(directory, tag, commit)
     checked(type(release_id) is int and release_id > 0, 'Invalid release ID.')
     release = client.api('/releases/'+str(release_id))
@@ -122,8 +127,7 @@ def attach(directory, release_id, tag, commit, client):
         and parsed.path == expected_path and not parsed.query and not parsed.fragment,
         'Unexpected release upload endpoint.')
     present = existing_assets(client, release_id)
-    # Check every collision before making any upload, including cases where the
-    # first asset is absent but the second asset conflicts.
+    # Reject every asset conflict before starting uploads.
     for row in rows:
         if row['name'] in present:
             checked(matches(present[row['name']], row),
@@ -140,6 +144,7 @@ def attach(directory, release_id, tag, commit, client):
         checked(result.get('name') == row['name'] and matches(result, row),
             'GitHub upload acknowledgement differs from the tested asset: '+row['name'])
         uploaded.append(row['name'])
+    # Recheck remote asset hashes and release identity after all uploads.
     final = existing_assets(client, release_id)
     checked(all(row['name'] in final and matches(final[row['name']], row) for row in rows),
         'Final release asset verification failed.')

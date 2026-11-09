@@ -1,4 +1,4 @@
-"""Portable, read-only native world-background extraction and Vulkan rendering.
+"""Extract world-map assets and render them with the original Vulkan shaders.
 
 The source plane is world X/Z. Raster rows run north to south. A tile always
 covers 1,280 world units, independently of its pixel density. The game-owned
@@ -46,7 +46,7 @@ def _json(path, value):
 
 
 def _retain(path, data):
-    """A cache may be reused only if its bytes match freshly extracted input."""
+    """Write extracted bytes or verify that the cached copy matches them."""
     path = Path(path)
     if path.exists():
         if _sha(path) != hashlib.sha256(data).hexdigest():
@@ -68,11 +68,12 @@ def _descriptor(raw_root, category, guid, part=0):
 
 
 def validate_parts(rows, tile_count):
-    """Existing native map layout contract, applied to fresh descriptors."""
+    """Check texture identities, part coverage, formats, mip levels and dimensions."""
     nx, ny = tile_count
     by_part = {d['$part']: d for d in rows}
     if len(by_part) != len(rows) or set(by_part) != set(range(7 + nx * ny * 2)):
         raise ValueError('Incomplete or duplicate map texture parts')
+    # Seven shared textures precede interleaved height and Shroud tile pairs.
     names = ['baseGradient', 'isolineGradient', 'fogZoneBorderGradient', 'fogNoise',
              'fogZoneNormal', 'fogZoneDangerous', 'baseHeight']
     formats = ['R8G8B8A8_unorm'] * 3 + ['BC4_unorm_block'] + ['BC7_unorm_block'] * 2 + ['R16_unorm']
@@ -120,6 +121,7 @@ def extract_world(context, output):
         raise ValueError('Unsupported world map extent; a new build profile is required')
     paths = sorted((Path(context.raw_root) / 'UiTextureResource').glob(MAP_GUID + '_*.json'))
     textures = validate_parts([_read(path) for path in paths], count)
+    # Cross-check descriptor coverage against identities in the installation's index.
     offset, length = context.index.location(96)
     if offset + length * 32 > len(context.index.data):
         raise ValueError('Map resource index exceeds KFC bounds')
@@ -133,6 +135,7 @@ def extract_world(context, output):
             identities.add(key)
     if identities != {(TEXTURE_TYPE, part) for part in range(207)} | {(MAP_TYPE, 0)}:
         raise ValueError('Fresh map descriptor coverage differs from the resource index')
+    # Retain complete texture mip chains before extracting the shader stages.
     receipts = []
     for part in range(207):
         row = textures[part]
@@ -176,7 +179,7 @@ def _f32(value):
 
 
 def _config_at_zoom(configs, zoom):
-    """Native descending interpolation with separate SSE float32 operations."""
+    """Interpolate descending zoom knots with float32 rounding at each operation."""
     zoom = _f32(zoom)
     scales = [_f32(row['zoomScale']) for row in configs]
     if len(scales) < 2 or not math.isfinite(zoom) or zoom <= 0:
@@ -202,6 +205,7 @@ def _config_at_zoom(configs, zoom):
 
 
 def _rva_reader(binary):
+    """Return a reader for RVA ranges fully backed by PE section file data."""
     if len(binary) < 64 or binary[:2] != b'MZ':
         raise ValueError('Expected a supported Windows executable')
     pe = struct.unpack_from('<I', binary, 60)[0]
@@ -227,20 +231,21 @@ def _rva_reader(binary):
 
 
 def bc4_upper_bound(block):
-    """Bound all selectors, including explicit 255 in six-value mode."""
+    """Bound BC4 values, including selector 7's explicit 255 in six-value mode."""
     if len(block) != 8:
         raise ValueError('Expected exactly one BC4 block')
     a, b = block[:2]
     bound = max(a, b)
     if a <= b:
         bits = int.from_bytes(block[2:], 'little')
+        # Each masked triplet is one selector; three set bits identify selector 7.
         if bits & (bits >> 1) & (bits >> 2) & 0x249249249249:
             bound = 255
     return bound
 
 
 def prepare_profile(context, assets, output):
-    """Derive closer-contour uniforms from fresh UI/balancing data and native witnesses."""
+    """Derive shader uniforms from verified executable, UI and balancing values."""
     assets, output = Path(assets), Path(output)
     profile = _read(PROFILE_PATH)
     executable = Path(context.game) / 'enshrouded.exe'
@@ -269,6 +274,7 @@ def prepare_profile(context, assets, output):
     alpha = _f32(_f32(alpha_range['x']) + _f32(_f32(alpha_range['y'] - alpha_range['x']) * _f32(.25)))
     if not math.isfinite(alpha) or not 0 <= alpha <= 1:
         raise ValueError('Invalid fresh map Shroud opacity')
+    # The green BC5 channel stores Shroud levels used to choose the color variant.
     bounds = Counter()
     for part in range(8, 207, 2):
         data = (assets / 'assets' / f'part-{part}.bin').read_bytes()
@@ -278,6 +284,7 @@ def prepare_profile(context, assets, output):
             bounds[bc4_upper_bound(data[offset:offset + 8])] += 1
     if max(bounds) > threshold:
         raise ValueError('Fresh Shroud payload exceeds normal-blue Flame threshold')
+    # Pack the renderer's eight uniform words: contour bytes, scalars and tile extent.
     words = struct.pack('<II5fI',
                         sum(v << (8 * i) for i, v in enumerate(selected['widths'])),
                         sum(v << (8 * i) for i, v in enumerate(selected['alphas'])),
@@ -300,6 +307,7 @@ def prepare_profile(context, assets, output):
 
 
 def tile_entry(column, row, pixels=2560, build_id='26430625'):
+    """Describe a tile with north-origin raster rows and south-origin map positions."""
     if type(column) is not int or type(row) is not int or not 0 <= column < 8 or not 0 <= row < 8:
         raise ValueError('World tile must belong to the eight-by-eight layout')
     if type(pixels) is not int or pixels not in (1280, 2560):
@@ -313,6 +321,7 @@ def tile_entry(column, row, pixels=2560, build_id='26430625'):
 
 def _run_helper(helper, arguments, log):
     env = os.environ.copy()
+    # Disable injected layers so the helper uses the system Vulkan driver directly.
     env['VK_LOADER_LAYERS_DISABLE'] = '~all~'
     result = subprocess.run([str(Path(helper).resolve()), *map(str, arguments)],
                             env=env, capture_output=True, text=True, errors='replace')
@@ -324,11 +333,10 @@ def _run_helper(helper, arguments, log):
 
 
 def run_world(context, output, progress=print):
-    """Render 64 verified native tiles, resuming only completed, unchanged tiles.
+    """Render 64 native tiles, verifying completed tiles before reuse.
 
-    ``context`` owns verified installation/descriptor extraction and packaged
-    helper integrity. Its world_pixels may be 1280 or 2560. The returned rows
-    are accepted directly by the portable delivery assembler.
+    The caller verifies installation and helper integrity. ``world_pixels``
+    selects 1,280 or 2,560 pixels per tile without changing world bounds.
     """
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -343,6 +351,7 @@ def run_world(context, output, progress=print):
     extraction = extract_world(context, assets)
     progress('Validating fresh UI contour settings and all native Shroud blocks')
     profile = prepare_profile(context, assets, output / 'profile')
+    # Resume binds source assets, uniforms, helper, device probe and pixel density.
     binding = {'build_id': profile_config['build_id'], 'pixels_per_tile': pixels,
                'helper_sha256': helper_sha, 'profile_sha256': profile['profile_sha256'],
                'device_probe_sha256': _sha(output / 'device-probe.txt'),
@@ -382,8 +391,7 @@ def run_world(context, output, progress=print):
                 progress(f'Verified existing world tile {len(tiles) + 1}/64')
             else:
                 if png.exists() or rgb.exists():
-                    # Uncommitted outputs can be left by interruption. Restrict
-                    # cleanup to this tool's exact two calculated tile paths.
+                    # Remove interrupted outputs only at this tile's PNG and RGB paths.
                     if not getattr(context, 'resume', False):
                         raise ValueError('Unfinished world tile exists; use resume')
                     for partial in (png, rgb):
@@ -412,6 +420,7 @@ def run_world(context, output, progress=print):
                        'png_sha256': verified['sha256'], 'run_input_binding_sha256': _sha(binding_path),
                        'log_sha256': _sha(log), 'original_spirv': True, 'shader_rewriting': False,
                        'all_png_crcs_checked': True, 'all_png_pixels_checked': True}
+                # Commit the verified PNG before discarding its temporary RGB source.
                 _json(receipt, old)
                 rgb.unlink()
             tiles.append({**tile, 'path': str(png.resolve()), 'rgb_sha256': old['rgb_sha256'],

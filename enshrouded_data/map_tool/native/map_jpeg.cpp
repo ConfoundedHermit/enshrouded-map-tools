@@ -1,4 +1,4 @@
-// Deterministic WIC JPEG Q100 4:4:4 conversion and full decoded-pixel comparison.
+// Encode quality-100, 4:4:4 JPEGs with WIC and report decoded RGB error.
 #define NOMINMAX
 #include <windows.h>
 #include <wincodec.h>
@@ -19,6 +19,7 @@
 #pragma comment(lib,"bcrypt.lib")
 using Microsoft::WRL::ComPtr;
 static void check(HRESULT h){if(FAILED(h)){std::ostringstream s;s<<"HRESULT 0x"<<std::hex<<uint32_t(h);throw std::runtime_error(s.str());}}
+// Hash decoded RGB bytes so validation is independent of image metadata.
 static std::string hash(const std::vector<BYTE>& bytes){
     BCRYPT_ALG_HANDLE a=nullptr;BCRYPT_HASH_HANDLE h=nullptr;DWORD n=0,len=0;
     if(BCryptOpenAlgorithmProvider(&a,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)throw std::runtime_error("SHA256 open failed");
@@ -31,6 +32,7 @@ static std::string hash(const std::vector<BYTE>& bytes){
     for(BYTE b:out)s<<std::hex<<std::setfill('0')<<std::setw(2)<<unsigned(b);return s.str();
 }
 struct Image{UINT w,h;std::vector<BYTE> rgb;};
+// Normalize the first image frame to tightly packed RGB for pixel comparison.
 static Image read(IWICImagingFactory* f,const wchar_t* path){
     ComPtr<IWICBitmapDecoder> decoder;check(f->CreateDecoderFromFilename(path,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder));
     ComPtr<IWICBitmapFrameDecode> frame;check(decoder->GetFrame(0,&frame));Image i;check(frame->GetSize(&i.w,&i.h));
@@ -45,6 +47,7 @@ static void encode(IWICImagingFactory* f,const Image& i,const wchar_t* path){
     ComPtr<IWICBitmapEncoder> encoder;check(f->CreateEncoder(GUID_ContainerFormatJpeg,nullptr,&encoder));
     check(encoder->Initialize(stream.Get(),WICBitmapEncoderNoCache));
     ComPtr<IWICBitmapFrameEncode> frame;ComPtr<IPropertyBag2> options;check(encoder->CreateNewFrame(&frame,&options));
+    // Preserve dimensions and chroma detail; WIC receives quality on a 0..1 scale.
     PROPBAG2 properties[2]{};properties[0].pstrName=const_cast<LPOLESTR>(L"ImageQuality");
     properties[1].pstrName=const_cast<LPOLESTR>(L"JpegYCrCbSubsampling");
     VARIANT values[2];VariantInit(&values[0]);VariantInit(&values[1]);
@@ -52,6 +55,7 @@ static void encode(IWICImagingFactory* f,const Image& i,const wchar_t* path){
     check(options->Write(2,properties,values));check(frame->Initialize(options.Get()));check(frame->SetSize(i.w,i.h));
     WICPixelFormatGUID format=GUID_WICPixelFormat24bppBGR;check(frame->SetPixelFormat(&format));
     if(format!=GUID_WICPixelFormat24bppBGR)throw std::runtime_error("Unexpected encoder pixel format");
+    // The JPEG encoder accepts BGR while comparison and hashing use RGB.
     std::vector<BYTE> bgr=i.rgb;for(size_t p=0;p<bgr.size();p+=3)std::swap(bgr[p],bgr[p+2]);
     check(frame->WritePixels(i.h,i.w*3,UINT(bgr.size()),bgr.data()));check(frame->Commit());check(encoder->Commit());
 }
@@ -62,6 +66,7 @@ int wmain(int argc,wchar_t** argv){
         check(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)));
         Image source=read(factory.Get(),argv[1]);encode(factory.Get(),source,argv[2]);Image jpeg=read(factory.Get(),argv[2]);
         if(source.w!=jpeg.w||source.h!=jpeg.h)throw std::runtime_error("Image dimensions changed");
+        // Measure every channel; the histogram uses each pixel's largest error.
         std::array<uint64_t,256> histogram{};uint64_t sum_abs=0,sum_sq=0,edge_abs=0,edge_count=0;
         int maximum=0,edge_max=0;size_t worst=0;double luma_sq=0;
         for(size_t p=0;p<source.rgb.size();p+=3){
@@ -69,6 +74,7 @@ int wmain(int argc,wchar_t** argv){
             for(size_t c=0;c<3;c++){
                 int d=int(jpeg.rgb[p+c])-int(source.rgb[p+c]),a=std::abs(d);sum_abs+=a;sum_sq+=d*d;
                 if(a>maximum){maximum=a;worst=p/3;}largest=std::max(largest,a);luma+=d*(c==0?.299:c==1?.587:.114);
+                // A source edge differs by at least eight in any channel from its left or upper neighbor.
                 if((p/3)%source.w && std::abs(int(source.rgb[p+c])-int(source.rgb[p-3+c]))>=8)edge=true;
                 if(p>=size_t(source.w)*3 && std::abs(int(source.rgb[p+c])-int(source.rgb[p-source.w*3+c]))>=8)edge=true;
             }
@@ -77,6 +83,7 @@ int wmain(int argc,wchar_t** argv){
         }
         double mse=double(sum_sq)/source.rgb.size(),mae=double(sum_abs)/source.rgb.size();
         auto quantile=[&](double q){uint64_t total=0,target=uint64_t(std::ceil(q*source.w*source.h));for(int i=0;i<256;i++){total+=histogram[i];if(total>=target)return i;}return 255;};
+        // Use a finite PSNR sentinel for exact matches so the report remains valid JSON.
         std::cout<<std::setprecision(12)<<"{\"width\":"<<source.w<<",\"height\":"<<source.h
             <<",\"source_rgb_sha256\":\""<<hash(source.rgb)<<"\",\"jpeg_rgb_sha256\":\""<<hash(jpeg.rgb)
             <<"\",\"quality\":100,\"requested_chroma\":\"4:4:4\",\"resampling\":false"

@@ -1,5 +1,4 @@
-// Offscreen replay of the original map SPIR-V, including its original vertex shader.
-// No SPIRV-Cross translation, shader rewriting, game process, hooks or game writes.
+// Render extracted map SPIR-V offscreen and write the selected crop as packed RGB.
 #define NOMINMAX
 #define VK_NO_PROTOTYPES
 #include <windows.h>
@@ -16,6 +15,7 @@
 #include <string>
 #include <vector>
 namespace fs=std::filesystem;
+// Resolve Vulkan entry points from the system loader at runtime.
 #define FUNCTIONS(X) \
  X(vkCreateInstance) X(vkDestroyInstance) X(vkEnumeratePhysicalDevices) \
  X(vkGetPhysicalDeviceProperties) X(vkGetPhysicalDeviceProperties2) X(vkGetPhysicalDeviceFeatures2) \
@@ -44,6 +44,7 @@ static std::vector<char> read(const fs::path&path){
 }
 struct Buffer{VkBuffer handle{};VkDeviceMemory memory{};};
 struct Image{VkImage handle{};VkDeviceMemory memory{};VkImageView view{};};
+// Own the device and resources used by one upload, draw and readback submission.
 struct Replay{
 #define DECLARE(name) PFN_##name name{};
  FUNCTIONS(DECLARE)
@@ -54,6 +55,7 @@ struct Replay{
  VkRenderPass renderPass{};VkFramebuffer framebuffer{};
  std::vector<Buffer> buffers;std::vector<Image> images;std::vector<VkSampler> samplers;
  std::vector<VkShaderModule> shaders;std::vector<VkDescriptorSetLayout> layouts;
+ // Match the original shader bindings, texture formats and requested tile dimensions.
  static std::vector<std::string> requirements(Replay&r,VkPhysicalDevice candidate,uint32_t pixels,uint32_t&graphicsFamily){
   std::vector<std::string>errors;
   VkPhysicalDeviceDescriptorIndexingFeatures indexing{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
@@ -113,6 +115,7 @@ struct Replay{
   VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};info.pApplicationInfo=&app;OK(vkCreateInstance(&info,nullptr,&instance));
   uint32_t count=0;OK(vkEnumeratePhysicalDevices(instance,&count,nullptr));if(!count)throw std::runtime_error("No Vulkan device");
   std::vector<VkPhysicalDevice> devices(count);OK(vkEnumeratePhysicalDevices(instance,&count,devices.data()));
+  // Select the first compatible device; probing stops before logical-device creation.
   for(auto candidate:devices){uint32_t graphics=UINT32_MAX;if(requirements(*this,candidate,pixels,graphics).empty()){physical=candidate;family=graphics;break;}}
   if(!physical)throw std::runtime_error("No compatible Vulkan device; see the Unsupported requirements above");
   VkPhysicalDeviceProperties props{};vkGetPhysicalDeviceProperties(physical,&props);
@@ -124,6 +127,7 @@ struct Replay{
   float priority=1;VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};qi.queueFamilyIndex=family;qi.queueCount=1;qi.pQueuePriorities=&priority;
   VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};di.pNext=&indexing;di.queueCreateInfoCount=1;di.pQueueCreateInfos=&qi;di.pEnabledFeatures=&features;
   OK(vkCreateDevice(physical,&di,nullptr,&device));vkGetDeviceQueue(device,family,0,&queue);vkGetPhysicalDeviceMemoryProperties(physical,&memories);
+  // Record uploads, rendering and readback in a single command buffer.
   VkCommandPoolCreateInfo cp{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};cp.queueFamilyIndex=family;OK(vkCreateCommandPool(device,&cp,nullptr,&commandPool));
   VkCommandBufferAllocateInfo ca{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};ca.commandPool=commandPool;ca.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;ca.commandBufferCount=1;
   OK(vkAllocateCommandBuffers(device,&ca,&command));VkCommandBufferBeginInfo cb{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};OK(vkBeginCommandBuffer(command,&cb));
@@ -152,6 +156,7 @@ struct Replay{
  Buffer buffer(VkDeviceSize size,VkBufferUsageFlags usage,const void*data=nullptr){
   Buffer b;VkBufferCreateInfo ci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};ci.size=size;ci.usage=usage;ci.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
   OK(vkCreateBuffer(device,&ci,nullptr,&b.handle));VkMemoryRequirements req{};vkGetBufferMemoryRequirements(device,b.handle,&req);
+  // Host-coherent buffers need no explicit flush or invalidate around CPU access.
   VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};ai.allocationSize=req.size;ai.memoryTypeIndex=memoryType(req.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
   OK(vkAllocateMemory(device,&ai,nullptr,&b.memory));OK(vkBindBufferMemory(device,b.handle,b.memory,0));buffers.push_back(b);
   if(data){void*p=nullptr;OK(vkMapMemory(device,b.memory,0,size,0,&p));memcpy(p,data,size_t(size));vkUnmapMemory(device,b.memory);}return b;
@@ -171,6 +176,7 @@ struct Replay{
   vkCmdPipelineBarrier(command,a,b,0,0,nullptr,0,nullptr,1,&barrier);
  }
  Image texture(const fs::path&path,uint32_t w,uint32_t h,VkFormat format,bool oneDim){
+  // Upload only the base mip in its native packed or block-compressed format.
   auto data=read(path);size_t n=size_t(w)*h*4;
   if(format==VK_FORMAT_R16_UNORM)n=size_t(w)*h*2;
   else if(format==VK_FORMAT_BC4_UNORM_BLOCK)n=size_t((w+3)/4)*((h+3)/4)*8;
@@ -194,6 +200,7 @@ struct Replay{
   VkShaderModule module{};OK(vkCreateShaderModule(device,&ci,nullptr,&module));shaders.push_back(module);return module;
  }
  VkDescriptorSetLayout layout(std::vector<VkDescriptorSetLayoutBinding> bindings,bool bindless=false){
+  // Enable update-after-bind descriptors for the shared image array.
   std::vector<VkDescriptorBindingFlags>flags(bindings.size(),bindless?VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT:0);
   VkDescriptorSetLayoutBindingFlagsCreateInfo fi{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};fi.bindingCount=uint32_t(flags.size());fi.pBindingFlags=flags.data();
   VkDescriptorSetLayoutCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};ci.pNext=bindless?&fi:nullptr;ci.flags=bindless?VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT:0;ci.bindingCount=uint32_t(bindings.size());ci.pBindings=bindings.data();
@@ -208,6 +215,7 @@ int wmain(int argc,wchar_t**argv){try{
  if(resolution<100||resolution>10240||std::min(rect[0],rect[1])<0||std::min(rect[2],rect[3])<=0||int64_t(rect[0])+rect[2]>10240||int64_t(rect[1])+rect[3]>10240||fs::exists(output))throw std::runtime_error("Invalid crop or existing output");
  auto profile=read(argv[8]);if(profile.size()!=32)throw std::runtime_error("Expected 32-byte native profile");
  Replay r(resolution);std::array<Image,207>parts{};
+ // Seven shared textures precede 100 interleaved detail-height and Shroud pairs.
  for(int i=0;i<207;++i){
   uint32_t w=1024,h=1024;VkFormat format=(i%2)?VK_FORMAT_BC4_UNORM_BLOCK:VK_FORMAT_BC5_UNORM_BLOCK;
   if(i<3){w=i==0?151:i==1?128:32;h=1;format=VK_FORMAT_R8G8B8A8_UNORM;}
@@ -217,6 +225,7 @@ int wmain(int argc,wchar_t**argv){try{
   parts[i]=r.texture(root/L"assets"/(L"part-"+std::to_wstring(i)+L".bin"),w,h,format,i<3);
  }
  auto clamp=r.sampler(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),wrap=r.sampler(VK_SAMPLER_ADDRESS_MODE_REPEAT);
+ // Supply the unchanged shader's transform, map settings and shared-image indices.
  std::array<float,16>matrix{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
  auto matrixBuffer=r.buffer(64,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,matrix.data());
  auto profileBuffer=r.buffer(32,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,profile.data());
@@ -224,6 +233,7 @@ int wmain(int argc,wchar_t**argv){try{
  std::array<uint32_t,100>heights{},fog{};for(int i=0;i<100;++i){heights[i]=1+i;fog[i]=101+i;}
  auto heightBuffer=r.buffer(400,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,heights.data()),fogBuffer=r.buffer(400,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,fog.data());
  auto binding=[](uint32_t n,VkDescriptorType type,uint32_t count=1){return VkDescriptorSetLayoutBinding{n,type,count,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,nullptr};};
+ // Preserve set numbers, including the unused sets 2 and 3, from the extracted shaders.
  std::array<VkDescriptorSetLayout,5>layouts{
   r.layout({binding(0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),binding(1,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),binding(2,VK_DESCRIPTOR_TYPE_SAMPLER)}),
   r.layout({binding(0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),binding(1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),binding(2,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),binding(3,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),binding(4,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),binding(5,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),binding(6,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),binding(7,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE),binding(8,VK_DESCRIPTOR_TYPE_SAMPLER),binding(9,VK_DESCRIPTOR_TYPE_SAMPLER)}),
@@ -237,10 +247,12 @@ int wmain(int argc,wchar_t**argv){try{
  writeImage(0,1,parts[6].view,{});writeImage(0,2,{},clamp);
  for(int i=0;i<5;++i)writeImage(1,3+i,parts[i<3?i:i+1].view,{});
  writeImage(1,8,{},wrap);writeImage(1,9,{},clamp);
+ // Initialize every array entry; the shader's tile tables address populated slots 1..200.
  std::vector<VkDescriptorImageInfo>bindless(32768,{VK_NULL_HANDLE,parts[7].view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
  for(int i=0;i<100;++i){bindless[1+i].imageView=parts[7+2*i].view;bindless[101+i].imageView=parts[8+2*i].view;}
  VkWriteDescriptorSet bw{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};bw.dstSet=sets[4];bw.dstBinding=0;bw.descriptorCount=32768;bw.descriptorType=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;bw.pImageInfo=bindless.data();r.vkUpdateDescriptorSets(r.device,1,&bw,0,nullptr);
  VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};pl.setLayoutCount=5;pl.pSetLayouts=layouts.data();OK(r.vkCreatePipelineLayout(r.device,&pl,nullptr,&r.pipelineLayout));
+ // Use RGBA8 UNORM without sRGB conversion, then allow transfer readback.
  VkAttachmentDescription attachment{};attachment.format=VK_FORMAT_R8G8B8A8_UNORM;attachment.samples=VK_SAMPLE_COUNT_1_BIT;attachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;attachment.storeOp=VK_ATTACHMENT_STORE_OP_STORE;attachment.stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE;attachment.stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;attachment.initialLayout=VK_IMAGE_LAYOUT_UNDEFINED;attachment.finalLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
  VkAttachmentReference color{0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};VkSubpassDescription sub{};sub.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS;sub.colorAttachmentCount=1;sub.pColorAttachments=&color;
  std::array<VkSubpassDependency,2>deps{{{VK_SUBPASS_EXTERNAL,0,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,0},{0,VK_SUBPASS_EXTERNAL,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_ACCESS_TRANSFER_READ_BIT,0}}};
@@ -251,6 +263,7 @@ int wmain(int argc,wchar_t**argv){try{
  std::array<VkPipelineShaderStageCreateInfo,2>stages{};for(auto&s:stages)s.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
  stages[0].pName="vs_main";stages[1].pName="fs_main";
  stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;stages[0].module=vs;stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;stages[1].module=ps;
+ // One oversized triangle covers the viewport with crop UVs in the 10240-unit raster.
  struct Vertex{float x,y,r,g,b,a,u,v;};float u=float(rect[0])/10240.f,v=float(rect[1])/10240.f,du=float(rect[2])/10240.f,dv=float(rect[3])/10240.f;
  std::array<Vertex,3>vertices{{{-1,1,1,0,0,1,u,v},{3,1,1,0,0,1,u+2*du,v},{-1,-3,1,0,0,1,u,v+2*dv}}};
  auto vertexBuffer=r.buffer(sizeof(vertices),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,vertices.data());
@@ -265,6 +278,7 @@ int wmain(int argc,wchar_t**argv){try{
  VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};blend.attachmentCount=1;blend.pAttachments=&blendAttachment;
  VkGraphicsPipelineCreateInfo graphics{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};graphics.stageCount=2;graphics.pStages=stages.data();graphics.pVertexInputState=&vi;graphics.pInputAssemblyState=&ia;graphics.pViewportState=&vp;graphics.pRasterizationState=&raster;graphics.pMultisampleState=&multi;graphics.pColorBlendState=&blend;graphics.layout=r.pipelineLayout;graphics.renderPass=r.renderPass;
  OK(r.vkCreateGraphicsPipelines(r.device,{},1,&graphics,nullptr,&r.pipeline));
+ // Draw once, copy the attachment to host memory and wait for completion.
  VkClearValue clear{};VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};begin.renderPass=r.renderPass;begin.framebuffer=r.framebuffer;begin.renderArea=scissor;begin.clearValueCount=1;begin.pClearValues=&clear;
  r.vkCmdBeginRenderPass(r.command,&begin,VK_SUBPASS_CONTENTS_INLINE);r.vkCmdBindPipeline(r.command,VK_PIPELINE_BIND_POINT_GRAPHICS,r.pipeline);
  VkDeviceSize offset=0;r.vkCmdBindVertexBuffers(r.command,0,1,&vertexBuffer.handle,&offset);r.vkCmdBindDescriptorSets(r.command,VK_PIPELINE_BIND_POINT_GRAPHICS,r.pipelineLayout,0,5,sets.data(),0,nullptr);r.vkCmdDraw(r.command,3,1,0,0);r.vkCmdEndRenderPass(r.command);
@@ -274,6 +288,7 @@ int wmain(int argc,wchar_t**argv){try{
  r.vkCmdPipelineBarrier(r.command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
  OK(r.vkEndCommandBuffer(r.command));VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=1;submit.pCommandBuffers=&r.command;OK(r.vkQueueSubmit(r.queue,1,&submit,{}));OK(r.vkQueueWaitIdle(r.queue));
  void*mapped=nullptr;OK(r.vkMapMemory(r.device,readback.memory,0,VK_WHOLE_SIZE,0,&mapped));
+ // Discard alpha while preserving framebuffer row order and RGB values.
  auto*rgba=static_cast<uint8_t*>(mapped);std::ofstream out(output,std::ios::binary);std::vector<char>row(size_t(resolution)*3);
  for(int y=0;y<resolution;++y){for(int x=0;x<resolution;++x)memcpy(row.data()+x*3,rgba+(size_t(y)*resolution+x)*4,3);out.write(row.data(),row.size());}
  if(!out)throw std::runtime_error("RGB output write failed");out.close();r.vkUnmapMemory(r.device,readback.memory);

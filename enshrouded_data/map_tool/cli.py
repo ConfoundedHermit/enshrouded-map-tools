@@ -1,4 +1,4 @@
-"""Contributor command line and prompt launcher. All generation stays local."""
+"""Launch local map generation, output verification and interactive prompts."""
 import argparse
 import html
 import json
@@ -55,6 +55,7 @@ def _file_manifest(root):
 
 
 def verify_output(root):
+    """Check a completed run's output file set, sizes and SHA-256 hashes."""
     root = Path(root).resolve()
     run = read(root/'run.json')
     if run.get('status')!='complete':
@@ -72,6 +73,7 @@ def verify_output(root):
 
 
 def _hall_uploads(root, halls):
+    """Write hall descriptions and collect manual-upload metadata."""
     directory = root/'halls/descriptions'
     directory.mkdir(exist_ok=True)
     rows = []
@@ -95,6 +97,7 @@ def _hall_uploads(root, halls):
 
 
 def _gallery(root, run, halls, world):
+    """Write the local image gallery and links to upload instructions."""
     esc = html.escape
     parts = ['<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
         '<title>Enshrouded generated maps</title><style>body{font:16px/1.6 system-ui;margin:2rem auto;padding:0 1rem;max-width:1300px;background:#f2eedf;color:#2c403c}a{color:#245b64}section{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}article{padding:1rem;background:#f9f7ed}img{display:block;width:100%;height:260px;object-fit:contain}code{overflow-wrap:anywhere}</style>',
@@ -119,6 +122,7 @@ def _gallery(root, run, halls, world):
 
 
 def generate(args):
+    """Verify inputs, run selected map pipelines and record delivery completion."""
     game, output = separate_output(args.game,args.output)
     profile = identify_game(game)
     bundle_root = Path(args.bundle).resolve() if args.bundle else PACKAGE_ROOT
@@ -126,6 +130,7 @@ def generate(args):
     request = {'game':str(game),'maps':args.maps,'world_layout':args.world_layout,
         'world_pixels':args.world_pixels,'build_id':profile['build_id'],
         'bundle_sha256':digest(bundle_root/'bundle.json')}
+    # An existing run must retain its options, game path and package identity.
     if output.exists() and any(output.iterdir()):
         if not args.resume or not (output/'run.json').is_file():
             raise MapToolError('Output folder is not empty. Choose a fresh folder, or use --resume for this tool\'s existing run.')
@@ -142,6 +147,7 @@ def generate(args):
            'build_id':profile['build_id'],'game_writes':0,'network_requests':0}
     write_json(output/'run.json',run)
     try:
+        # Verify game files before extracting resources or invoking renderers.
         verification = verify_game(game,profile,_say)
         write_json(output/'inputs.json',verification)
         ctx = context(game,output,profile,bundle_root,bundle,args.maps,
@@ -158,6 +164,7 @@ def generate(args):
             _say('Preparing world '+args.world_layout+' output; a full-resolution master can take several minutes.')
             world = write_world_delivery(tiles,output/'world',layout=args.world_layout,
                 build_id=profile['build_id'],jpeg_helper=ctx.jpeg_helper,resume=args.resume)
+        # Combine both pipelines into one upload manifest and completion receipt.
         uploads = _hall_uploads(output,halls) if halls else []
         if world:
             uploads += [{**u,'local_file':'world/'+u['local_file'],
@@ -170,12 +177,14 @@ def generate(args):
             world_layout=None if world is None else world['layout'],output_files=_file_manifest(output),
             manual_upload_files=len(uploads))
         _gallery(output,run,halls,world)
+        # Include the gallery and manifest hashes before committing completion.
         for name in ('manual-upload.json','index.html'):
             run['output_files'][name]={'sha256':digest(output/name),'size_bytes':(output/name).stat().st_size}
         write_json(output/'run.json',run)
         _say('Complete. Open '+str(output/'index.html'))
         return run
     except BaseException as error:
+        # Preserve failure details and run state for diagnostics and resume checks.
         run.update(status='interrupted' if isinstance(error,KeyboardInterrupt) else 'failed',
             finished_at=now(),elapsed_seconds=round(time.monotonic()-started,3),
             error_type=type(error).__name__,error=str(error))

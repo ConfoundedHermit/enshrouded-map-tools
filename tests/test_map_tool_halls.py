@@ -1,3 +1,4 @@
+"""Synthetic scene, arrival binding, floor selection and marker projection checks."""
 from array import array
 import json
 from pathlib import Path
@@ -14,6 +15,7 @@ SCENE = '00000000-0000-0000-0000-000000000001'
 
 
 def position(x, y, z):
+    """Encode world coordinates as split 16.16 transform fields."""
     result = {}
     for axis, coordinate in zip('XYZ', (x, y, z)):
         encoded = round(coordinate * 65536) & 0xffffffff
@@ -23,7 +25,7 @@ def position(x, y, z):
 
 
 def fixture(root):
-    """A synthetic current extraction, with no retained game descriptors."""
+    """Write a minimal synthetic scene extraction and return its hall profile."""
     profile = {'build_id': 'test', 'scene_guid': SCENE, 'expected_scene_chunk_count': 1,
         'halls': [{'region': 'Test', 'slug': 'test', 'level_offset': 9,
                   'surface_teleporter_id': 'surface', 'interior_teleporter_id': 'interior',
@@ -117,8 +119,7 @@ class ContributorHallTests(unittest.TestCase):
             bind_arrivals(areas, teleports, profile)
 
     def test_floating_control_selects_its_supporting_floor_without_selecting_roof(self):
-        # The enemy is too far above its floor for a direct match, but lies in
-        # the enclosed air. A roof interval at the same X/Z must stay excluded.
+        # The arrival lies in the lower interval's air, beyond direct floor-match range.
         values = array('H', [10, 20, 4, 30, 0xff80, 0xff80,
                              10, 20, 40, 50, 0xff80, 0xff80])
         labels = array('I', [3, 7])

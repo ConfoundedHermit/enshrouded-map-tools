@@ -1,19 +1,17 @@
-"""Portable hall floor selection, using authored controls and native intervals.
-
-These pure operations preserve the accepted Hollow Halls geometry rules. They
-do not read historical research exports or depend on workspace paths.
-"""
+"""Match authored scene controls to enclosed floors and hall map landmarks."""
 from array import array
 from collections import Counter, defaultdict
 import math
 
 
 def contains(box, position):
+    """Test a world position against inclusive authored bounds."""
     return all(box['min'][axis] <= position[axis] <= box['max'][axis]
                for axis in 'xyz')
 
 
 def box_contains_floor(record, boxes):
+    """Test the first air cell's centre against half-open world bounds."""
     x, z, lo, _ = record[:4]
     position = {'x': (x + .5) * .5, 'z': (z + .5) * .5,
                 'y': (lo + .5) * .5}
@@ -22,7 +20,12 @@ def box_contains_floor(record, boxes):
 
 
 def match_seeds(values, labels, seeds, radius=4, *, floor_distance=False):
-    """Find the nearest enclosed interval/floor to every placed control."""
+    """Find each control's nearest interval within an X/Z search square.
+
+    ``radius`` is in half-metre cells. Vertical distance is measured to the
+    air interval, or to its floor when ``floor_distance`` is true.
+    """
+    # Index nearby columns once so interval scanning only visits local controls.
     search = defaultdict(list)
     for index, seed in enumerate(seeds):
         p = seed['position']
@@ -51,6 +54,7 @@ def match_seeds(values, labels, seeds, radius=4, *, floor_distance=False):
 
 
 def floor_seeds(layout, chests):
+    """Collect entrances, spawners and unambiguous scene/loot controls by hall."""
     seeds = []
     for index, hall in enumerate(layout['halls']):
         seeds.append({'hall': index, 'kind': 'entrance',
@@ -72,7 +76,10 @@ def floor_seeds(layout, chests):
 
 
 def select_floors(values, labels, layout, chests):
-    """Return hall-seeded component ownership and complete matching evidence."""
+    """Assign components using controls within 3 m of floors or 1 m of air.
+
+    Return supported hall indices per component and both sets of seed matches.
+    """
     if len(values) != 6 * len(labels):
         raise ValueError('Different interval/component lengths')
     seeds = floor_seeds(layout, chests)
@@ -91,7 +98,7 @@ def select_floors(values, labels, layout, chests):
 
 
 def map_markers(hall, layout, values):
-    """Preserve continuous native scene positions in the one-panel projection."""
+    """Validate landmarks near selected floors, retaining exact scene positions."""
     markers = [{'position': hall['teleport_to']['position'], 'label': 'ENTRANCE',
                 'kind': 'entrance', 'native_id': hall['teleport_to']['native_id']}]
     for feature in layout['scene_feature_controls']:

@@ -18,7 +18,7 @@ from enshrouded_data.map_tool.delivery import (
 
 
 def independent_decode(path):
-    """Small test fixtures only; intentionally separate scalar unfilter code."""
+    """Decode small RGB PNG fixtures with scalar None/Up unfiltering."""
     data = Path(path).read_bytes()
     assert data[:8] == b'\x89PNG\r\n\x1a\n'
     at = 8
@@ -128,7 +128,7 @@ class DeliveryTests(unittest.TestCase):
         tiles[-1]['path'].write_bytes(original)
 
     def test_filters_and_compression_bomb_are_row_bounded(self):
-        # One tiny IDAT expands to >6 MiB, but decoding must never inflate it all.
+        # A small IDAT expands beyond 6 MiB to exercise the row-bounded decoder.
         width, height = 4096, 512
         path = self.root / 'compressible.png'
         header = chunk(b'IHDR', struct.pack('>2I5B', width, height, 8, 2, 0, 0, 0))

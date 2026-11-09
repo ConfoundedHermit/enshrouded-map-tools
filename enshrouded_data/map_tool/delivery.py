@@ -1,8 +1,7 @@
-"""Portable lossless map delivery and manual wiki-upload materials.
+"""Assemble lossless maps, validate images and prepare manual-upload materials.
 
-The PNG codec follows maps/background.py and background_wiki.py, with bounded
-IDAT inflation and complete CRC/order checks. It accepts our RGB8, filter 0/2
-exports. Image assembly uses rows only; pixel density never sets world bounds.
+The streaming PNG codec accepts noninterlaced RGB8 with None or Up filters.
+Assembly preserves source pixels and keeps world bounds independent of density.
 """
 from __future__ import annotations
 
@@ -38,6 +37,7 @@ def _write_json(path, value):
 
 
 def _owned_path(root, name):
+    """Require an output path under root with no linked path components."""
     root = Path(root).resolve()
     candidate = root / name
     if not candidate.resolve().is_relative_to(root):
@@ -75,8 +75,7 @@ class _DeliveryState:
         path = _owned_path(self.root, name)
         if name in self.state['completed_files']:
             return True
-        # The matching intent was retained before output creation. A file left
-        # by an interrupted write is disposable only at this exact planned path.
+        # The saved request binds this run; discard only this planned unfinished file.
         if path.exists():
             if not path.is_file():
                 raise ValueError('Unfinished delivery path is not a regular file')
@@ -91,7 +90,7 @@ class _DeliveryState:
 
 
 def verify_world_delivery(root):
-    """Verify original receipts before reusing a completed local delivery."""
+    """Verify recorded files, PNG pixels and JPEG headers in a completed delivery."""
     root = Path(root).resolve()
     result = json.loads(_owned_path(root, 'delivery.json').read_text(encoding='utf-8'))
     state_path = _owned_path(root, '.delivery-state.json')
@@ -148,11 +147,10 @@ def _byte_masks(size):
 
 
 def _up_bytes(row, previous, *, decode):
-    """Bytewise modulo-256 arithmetic using carry-isolated integer lanes.
+    """Apply or reverse PNG's Up filter using carry-isolated integer byte lanes.
 
-    Each low-seven-bit sum stays below 256, and each biased difference stays
-    positive, so neither operation carries/borrows into the neighboring byte.
-    This avoids a Python iteration for every channel in a 1.2-GB world master.
+    Masked sums and biased differences prevent carries or borrows between bytes,
+    avoiding a Python loop over each color channel.
     """
     low, high = _byte_masks(len(row))
     a, b = int.from_bytes(row, 'little'), int.from_bytes(previous, 'little')
@@ -162,7 +160,7 @@ def _up_bytes(row, previous, *, decode):
 
 
 def _idat_blocks(stream):
-    """Yield at most 64 KiB of IDAT while checking every chunk and the end."""
+    """Yield IDAT blocks up to 64 KiB, checking CRCs, order and the file end."""
     seen = False
     while True:
         header = stream.read(8)
@@ -193,10 +191,10 @@ def _idat_blocks(stream):
 
 
 def png_rows(path, *, expected_rgb_sha256=None):
-    """Stream and validate every row; full iteration validates IEND and hash.
+    """Yield decoded RGB rows with bounded decompression.
 
-    Decompression has an explicit one-row output limit even when an IDAT chunk
-    describes a highly compressible full image. No full chunk is accumulated.
+    Exhaust the iterator to validate all chunk CRCs, IEND and any expected pixel
+    hash. Decompression buffers at most one filtered row at a time.
     """
     width, height = png_dimensions(path)
     stride = width * 3 + 1
@@ -235,7 +233,7 @@ def png_rows(path, *, expected_rgb_sha256=None):
 
 
 def inspect_png(path, *, expected_rgb_sha256=None):
-    """Validate all chunks/pixels and return a portable fingerprint."""
+    """Fully decode and validate a PNG, returning dimensions and file/pixel hashes."""
     dimensions = png_dimensions(path)
     digest = hashlib.sha256()
     for row in png_rows(path, expected_rgb_sha256=expected_rgb_sha256):
@@ -246,13 +244,13 @@ def inspect_png(path, *, expected_rgb_sha256=None):
 
 
 def verify_png(path, expected_rgb_sha256=None):
-    """Portable compatibility entry point for render backends."""
+    """Return a passed validation report after checking all PNG rows and chunks."""
     info = inspect_png(path, expected_rgb_sha256=expected_rgb_sha256)
     return {'status': 'passed', 'decoded_rgb_sha256': info['rgb_sha256'], **info}
 
 
 def write_png(path, width, height, rows):
-    """Write RGB rows to a fresh PNG, retaining no more than one image row."""
+    """Write RGB rows to a fresh PNG using Up filtering and bounded row buffers."""
     path = Path(path)
     if path.exists():
         raise ValueError('Output already exists: ' + path.name)
@@ -298,6 +296,7 @@ png_from_rgb = write_png
 
 
 def _tiles(tile_rows, grid, tile_world_units):
+    """Validate tile geometry and return the complete grid in north-to-south order."""
     if type(grid) is not int or not 1 <= grid <= 16:
         raise ValueError('Invalid world tile grid')
     if type(tile_world_units) is not int or tile_world_units <= 0:
@@ -331,11 +330,10 @@ def _tiles(tile_rows, grid, tile_world_units):
 
 
 def stitch_world_tiles(tile_rows, output_path, grid=8, *, tile_world_units=1280):
-    """Losslessly join north-origin native tiles with bounded row buffers.
+    """Join tiles north to south without resampling or allocating a full image.
 
-    ``tile_rows`` contains path, column, row_from_north and optional expected
-    rgb_sha256/png_sha256/world_bounds_xy. Native tile sampling is independent
-    of its 1,280-world-unit extent; 2,560px tiles produce a 20,480px master.
+    Rows supply path, column and row_from_north, with optional expected file/pixel
+    hashes and world bounds. Pixel dimensions do not set the tiles' world extent.
     """
     tiles, edge = _tiles(tile_rows, grid, tile_world_units)
 
@@ -363,7 +361,7 @@ def stitch_world_tiles(tile_rows, output_path, grid=8, *, tile_world_units=1280)
 
 
 def jpeg_header(data):
-    """Check actual Q100 quantization and 4:4:4 sampling, not just requests."""
+    """Check encoded JPEG dimensions, all-one quantization and 4:4:4 sampling."""
     if data[:2] != b'\xff\xd8' or data[-2:] != b'\xff\xd9':
         raise ValueError('Expected complete JPEG')
     at, frame, tables = 2, None, {}
@@ -414,7 +412,7 @@ def jpeg_header(data):
 
 def convert_wiki_jpeg(source_png, output_path, helper, *, expected_rgb_sha256=None,
                       max_upload_bytes=WIKI_MAX_BYTES):
-    """Use the packaged WIC helper and verify its full-resolution comparison."""
+    """Convert through WIC and validate encoded settings and pixel-error metrics."""
     source = inspect_png(source_png, expected_rgb_sha256=expected_rgb_sha256)
     output_path = Path(output_path)
     if output_path.exists():
@@ -456,12 +454,10 @@ def _description(build_id, *, column=None, north=None, bounds=None, dimensions=N
 def write_world_delivery(tile_rows, output_root, *, layout='both', build_id,
                          jpeg_helper=None, grid=8, tile_world_units=1280,
                          max_upload_bytes=WIKI_MAX_BYTES, resume=False):
-    """Write chosen lossless world layout, JPEG tiles and manual upload records.
+    """Write the selected world layout, optional JPEG tiles and upload records.
 
-    A master exceeding the wiki size limit remains a local lossless master and
-    is explicitly excluded from manual-upload candidates. It is never resized.
-    JPEG derivatives are created only when their verified native helper is given.
-    This function has no network or credentials functionality.
+    Records flag files above the configured upload limit without resizing them.
+    JPEG tiles require a native helper; otherwise tile upload records use PNGs.
     """
     if layout not in ('single', 'tiles', 'both'):
         raise ValueError('World layout must be single, tiles or both')
@@ -501,6 +497,7 @@ def write_world_delivery(tile_rows, output_root, *, layout='both', build_id,
         result['uploads'].append(entry)
         return entry
 
+    # The master is assembled losslessly and checkpointed independently of tiles.
     if layout in ('single', 'both'):
         _owned_path(root, 'master').mkdir(exist_ok=True)
         local = 'master/Embervale.png'
@@ -537,6 +534,7 @@ def write_world_delivery(tile_rows, output_root, *, layout='both', build_id,
                 quality_file = f'quality/{name}.json'
                 jpeg_ready = checkpoint.ready(wiki_local)
                 quality_ready = checkpoint.ready(quality_file)
+                # A reusable derivative requires both the image and its quality report.
                 if jpeg_ready != quality_ready:
                     raise ValueError('Incomplete JPEG comparison checkpoint')
                 if jpeg_ready:
@@ -555,6 +553,7 @@ def write_world_delivery(tile_rows, output_root, *, layout='both', build_id,
                 entry = upload_entry(local, f'Embervale Map {build_id} {name}.png', info, description)
                 entry['reason'] += '; PNG names require a reviewed background-definition update'
             result['tiles'].append(item)
+    # Record delivery completion only after all images and review materials exist.
     _write_json(_owned_path(root, 'manual-upload.json'), {'network_requests': 0, 'uploads': result['uploads']})
     _write_gallery(root, result)
     _write_json(_owned_path(root, 'delivery.json'), result)

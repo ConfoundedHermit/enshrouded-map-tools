@@ -1,4 +1,4 @@
-"""Local input verification and fresh descriptor extraction; no network code."""
+"""Verify local game and package inputs, then extract selected descriptors."""
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
@@ -19,7 +19,7 @@ PROFILE_ROOT = Path(__file__).with_name('profiles')
 
 
 class MapToolError(RuntimeError):
-    """An unsupported input or incomplete operation with a useful local report."""
+    """An input or operation failure suitable for reporting to the contributor."""
 
 
 def now():
@@ -44,6 +44,7 @@ def write_json(path, value):
 
 
 def within(root, name):
+    """Resolve a path and reject targets outside the given root."""
     root = Path(root).resolve()
     path = (root/name).resolve()
     if not path.is_relative_to(root):
@@ -95,6 +96,7 @@ def verify_game(game, profile, progress=print):
 
 
 def assert_inputs_stable(game, verification):
+    """Reject size or modification-time changes since input verification."""
     for record in verification['files']:
         stat = (Path(game)/record['name']).stat()
         if (stat.st_size,stat.st_mtime_ns)!=(record['size_bytes'],record['mtime_ns']):
@@ -102,6 +104,7 @@ def assert_inputs_stable(game, verification):
 
 
 def load_bundle(root):
+    """Verify every file listed in the contributor package's hash manifest."""
     root = Path(root).resolve()
     path = root/'bundle.json'
     if not path.is_file():
@@ -114,6 +117,7 @@ def load_bundle(root):
 
 
 def indexed_resources(index):
+    """Read GUID, type and part identities from 32-byte KFC resource records."""
     offset, count = index.location(96)
     if offset+count*32>len(index.data):
         raise MapToolError('Resource identity table exceeds the KFC index.')
@@ -127,6 +131,7 @@ def indexed_resources(index):
 
 
 def extraction_selection(index, profile, maps):
+    """Select indexed resources needed by the requested map pipelines."""
     types = profile['resource_types']
     scene = profile['main_scene_guid']
     wanted = set()
@@ -156,12 +161,13 @@ def _run_parser(arguments, log, progress):
 
 
 def extract_descriptors(game, output, profile, maps, parser, *, resume=False, progress=print):
-    """Put parser/reflection beside the output, never beside the game executable."""
+    """Extract descriptors with a private parser copy, or verify a completed cache."""
     output = Path(output)
     raw = output/'cache/descriptors'
     receipt = output/'cache/extraction.json'
     selected = extraction_selection(KFCIndex(Path(game)),profile,maps)
     selection_key = hashlib.sha256(json.dumps(sorted(selected)).encode()).hexdigest()
+    # Reuse requires the exact descriptor set, file hashes and reflection hash.
     if resume and receipt.is_file():
         previous = read(receipt)
         if previous['selection_sha256']!=selection_key or previous['profile_build_id']!=profile['build_id']:
@@ -179,6 +185,7 @@ def extract_descriptors(game, output, profile, maps, parser, *, resume=False, pr
         return raw, reflection
     if raw.exists() or receipt.exists():
         raise MapToolError('An unfinished descriptor extraction exists. Use a fresh output folder.')
+    # The parser writes reflection beside its executable, so run a cache-local copy.
     parser_dir = output/'cache/parser'
     parser_dir.mkdir(parents=True,exist_ok=True)
     private_parser = parser_dir/'kfc-parser.exe'
@@ -194,13 +201,12 @@ def extract_descriptors(game, output, profile, maps, parser, *, resume=False, pr
     types = {t['qualifiedName']:t['qualifiedHash'] for t in registry['types']}
     if any(types.get(name)!=kind for name,kind in profile['resource_types'].items()):
         raise MapToolError('Fresh reflection resource types differ from the supported client profile.')
-    # Use type filters for complete types, keeping the command below Windows' argv limit.
+    # Type-wide filters keep large resource selections within Windows' argv limit.
     complete = {'keen::ecs::TemplateResource'} if maps in ('all','halls') else set()
     if maps in ('all','world'):
         complete.add('keen::BalancingTable')
     ids = sorted({g for g,k,p in selected if k not in {types[n] for n in complete}})
-    # Guid filters in this CLI require full type/part identities. For numerous scene
-    # chunks use the complete type then verify the main-scene subset separately.
+    # Extract scene chunks by type; validate extra chunks against the index below.
     filters = ['t'+name for name in sorted(complete)]
     entity_kind = types['keen::SceneEntityChunkResource']
     if maps in ('all','halls'):
@@ -226,6 +232,7 @@ def extract_descriptors(game, output, profile, maps, parser, *, resume=False, pr
     absent = selected-decoded.keys()
     allowed = set(indexed_resources(KFCIndex(Path(game))))
     extras = decoded.keys()-selected
+    # Every requested resource is mandatory; only indexed scene chunks may be extra.
     if absent or any(k not in allowed or k[1]!=entity_kind for k in extras):
         raise MapToolError('Extracted descriptors do not cover the requested indexed resources.')
     write_json(receipt,{'at':now(),'profile_build_id':profile['build_id'],'maps':maps,
@@ -237,6 +244,7 @@ def extract_descriptors(game, output, profile, maps, parser, *, resume=False, pr
 
 
 def context(game, output, profile, bundle_root, bundle, maps, *, resume=False, progress=print, world_pixels=2560):
+    """Assemble shared extraction, profile and helper paths for both renderers."""
     raw, reflection = extract_descriptors(game,output,profile,maps,within(bundle_root,bundle['parser']),resume=resume,progress=progress)
     return SimpleNamespace(game=Path(game),raw_root=raw,index=KFCIndex(Path(game)),profile=profile,
         parser=within(bundle_root,bundle['parser']),reflection=reflection,

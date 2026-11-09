@@ -1,8 +1,4 @@
-"""Build and package the public Windows tool using local, verified dependencies.
-
-No downloads, game access, workspace-specific paths, or third-party Python
-packages are required. See the repository's docs/BUILDING.md for dependency setup.
-"""
+"""Build and package the Windows tool offline using verified local dependencies."""
 import argparse
 import json
 import os
@@ -22,9 +18,7 @@ HELPERS = {
 }
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 LOCK_NAME = 'enshrouded_data/map_tool/build-dependencies.json'
-# Public source inventory shared by offline packaging and release validation.
-# Add new runtime files and contributor documents here deliberately; never scan
-# the working tree for package contents, which can include ignored private data.
+# An explicit public inventory excludes unlisted workspace files from packages.
 PACKAGE_SOURCE_FILES = (
     'LICENSE',
     'README.md',
@@ -103,7 +97,7 @@ def _version_key(path):
 
 
 def discover_compiler(explicit=None, environ=None):
-    """Use an override, a Developer Command Prompt, or Microsoft's vswhere."""
+    """Find MSVC through an override, the current PATH or Microsoft's vswhere."""
     environment = os.environ if environ is None else environ
     if explicit:
         compiler = Path(explicit).resolve()
@@ -133,6 +127,7 @@ def discover_compiler(explicit=None, environ=None):
 
 
 def discover_sdk(explicit_root=None, explicit_version=None, environ=None):
+    """Select a complete x64 Windows SDK, honoring explicit root and version values."""
     environment = os.environ if environ is None else environ
     roots = []
     if explicit_root:
@@ -163,6 +158,7 @@ def discover_sdk(explicit_root=None, explicit_version=None, environ=None):
 
 
 def verify_vulkan_headers(path, lock):
+    """Check the Vulkan header and license files against the dependency lock."""
     root = Path(path).resolve()
     for name, checksum in lock['vulkan_headers']['files'].items():
         _checked_file(_within(root, name), checksum, 'pinned Vulkan-Headers file')
@@ -171,6 +167,7 @@ def verify_vulkan_headers(path, lock):
 
 def build_helpers(output, source=SOURCE_ROOT, compiler=None, sdk_root=None,
                   sdk_version=None, vulkan_headers=None, progress=print):
+    """Compile the native helpers and record their source, toolchain and binary hashes."""
     source = Path(source).resolve()
     output = _fresh_output(output, source)
     lock, lock_sha256 = _lock(source)
@@ -182,6 +179,7 @@ def build_helpers(output, source=SOURCE_ROOT, compiler=None, sdk_root=None,
     vc = compiler.parents[3]
     if not (vc / 'include').is_dir() or not (vc / 'lib/x64').is_dir():
         raise ValueError('Use an x64 MSVC compiler in its installed VC/Tools/MSVC directory.')
+    # Configure the x64 include and library paths independently of the calling shell.
     environment = os.environ.copy()
     environment['PATH'] = str(compiler.parent) + os.pathsep + environment.get('PATH', '')
     includes = [headers / 'include', vc / 'include']
@@ -190,8 +188,7 @@ def build_helpers(output, source=SOURCE_ROOT, compiler=None, sdk_root=None,
     libraries = [vc / 'lib/x64'] + [sdk / 'Lib' / sdk_version / name / 'x64' for name in ('ucrt', 'um')]
     environment['INCLUDE'] = os.pathsep.join(map(str, includes))
     environment['LIB'] = os.pathsep.join(map(str, libraries))
-    # Build the inputs list before creating output; a missing source cannot leave
-    # an apparently valid partial build receipt.
+    # Require all helper sources before creating build output.
     sources = {name: _within(source, 'enshrouded_data/map_tool/native/' + cpp)
                for name, cpp in HELPERS.items()}
     if any(not path.is_file() for path in sources.values()):
@@ -229,12 +226,11 @@ def _parser_license(source_archive, pin):
 
 
 def package_sources(source):
-    """Validate the public inventory without requiring Git or traversing extras."""
+    """Validate the explicit source inventory without Git or scanning other files."""
     source = Path(source).resolve()
     files = {}
     for name in PACKAGE_SOURCE_FILES:
-        # Keep the unresolved path so links to other locations inside the source
-        # tree are rejected too, including Windows directory junctions.
+        # Check unresolved ancestors to reject links and junctions within the tree too.
         _within(source, name)
         path = source / name
         current = path
@@ -256,7 +252,7 @@ def _copy_sources(files, output):
 
 
 def _public_build_receipt(build):
-    """Keep provenance while leaving local machine paths in the local receipt."""
+    """Retain build provenance without publishing local machine paths."""
     return {'schema_version': 1, 'version': build['version'], 'platform': build['platform'],
         'dependency_lock_sha256': build['dependency_lock_sha256'],
         'compiler': {'name': Path(build['compiler']['path']).name,
@@ -270,6 +266,7 @@ def _public_build_receipt(build):
 
 def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_source=None,
                   vulkan_headers=None, progress=print):
+    """Validate package inputs, then copy the runtime, licenses and hash manifest."""
     source = Path(source).resolve()
     output = _fresh_output(output, source)
     sources = package_sources(source)
@@ -281,6 +278,7 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
         raise ValueError('The pinned parser size differs from the dependency lock.')
     parser_source = Path(parser_source or _within(source, pin['default_source_path'])).resolve()
     parser_license = _parser_license(parser_source, pin)
+    # Bind the helper binaries to the current dependency lock and source bytes.
     build = read(helpers / 'build.json')
     if build.get('dependency_lock_sha256') != lock_sha256 or build.get('schema_version') != 1:
         raise ValueError('Helpers were not built with the current public dependency lock.')
@@ -296,6 +294,7 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
         binary = _checked_file(_within(helpers, name), record['sha256'], 'built native helper')
         if binary.stat().st_size != record['size_bytes']:
             raise ValueError('A built native helper size differs from its receipt.')
+    # Verify all license inputs before creating the package directory.
     if vulkan_headers:
         headers_license = verify_vulkan_headers(vulkan_headers, lock) / 'LICENSE.md'
     else:
@@ -309,6 +308,7 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
         raise ValueError('The source root must contain the project MIT LICENSE.')
     if not (source / 'README.md').is_file():
         raise ValueError('The source root must contain the contributor README.md.')
+    # Copy only the validated inventory and required third-party redistribution files.
     output.mkdir(parents=True)
     _copy_sources(sources, output)
     (output / 'helpers').mkdir()
@@ -330,6 +330,7 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
         'The exact corresponding source, Cargo.lock and upstream license are included.\n'
         'Vulkan-Headers are compile-time declarations; their upstream license is retained.\n'
         'The Vulkan loader and Windows imaging libraries come from the local system.\n', encoding='utf-8')
+    # Use py -3.13 when the launcher exists; otherwise use Python on PATH.
     launcher = ('@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'
         'where py >nul 2>nul\r\nif errorlevel 1 goto usepython\r\n'
         'py -3.13 -B -m enshrouded_data.map_tool %*\r\nexit /b %errorlevel%\r\n'
@@ -339,6 +340,7 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
         'parser': 'helpers/kfc-parser.exe', 'hall_helper': 'helpers/hollow-geometry.exe',
         'world_helper': 'helpers/world-renderer.exe', 'jpeg_helper': 'helpers/map-jpeg.exe',
         'network_requests': 0, 'files': {}}
+    # Hash every payload file; bundle.json itself is written after the inventory.
     bundle['files'] = {path.relative_to(output).as_posix(): digest(path)
                        for path in sorted(output.rglob('*')) if path.is_file()}
     write_json(output / 'bundle.json', bundle)

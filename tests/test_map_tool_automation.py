@@ -14,6 +14,8 @@ from enshrouded_data.map_tool.core import digest, read
 
 
 class Response(io.BytesIO):
+    """In-memory download response exposing the final redirect URL."""
+
     def __init__(self, data, url='https://example.invalid/pinned'):
         super().__init__(data)
         self.url = url
@@ -77,8 +79,7 @@ class AutomationTests(unittest.TestCase):
             for entry, data in entries:
                 if isinstance(entry, str):
                     info = zipfile.ZipInfo(entry)
-                    # Keep deliberately unsafe separators; ZipInfo's Windows
-                    # constructor normally converts them to forward slashes.
+                    # Preserve unsafe separators that ZipInfo normalizes on Windows.
                     info.filename = entry
                 else:
                     info = entry
@@ -156,8 +157,7 @@ class AutomationTests(unittest.TestCase):
     def test_uncommitted_package_source_cannot_claim_release_provenance(self):
         sources = {'README.md': self.root / 'README.md',
                    'docs/public.md': self.root / 'public.md'}
-        # A similarly named file elsewhere in the commit does not establish
-        # provenance for a required public source at its actual package path.
+        # Provenance requires the exact package path, even when basenames match.
         tree = ('100644 blob ' + '1' * 40 + '\tREADME.md\0'
                 '100644 blob ' + '2' * 40 + '\tprivate/public.md\0')
         with (patch.object(release.build, 'package_sources', return_value=sources),

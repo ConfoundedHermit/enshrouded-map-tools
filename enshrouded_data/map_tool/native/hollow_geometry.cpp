@@ -1,6 +1,4 @@
-// Offline enclosed-air extraction from verified complete solid voxel tiles.
-// The column/brick codec follows voxel_codec.py and background_surface.cpp.
-// This helper never loads or writes a game image, installation, or KFC file.
+// Extract enclosed air intervals and connected floors from complete solid voxel tiles.
 //
 // --intervals fresh-output.bin input (little endian):
 //   10 uint32: 0x31474848, 20480, 256, xmin, xmax, zmin, zmax,
@@ -14,7 +12,7 @@
 // --interval-column input: four uint32 ymin,ymax,minAir,reserved=0, then a
 //   uint32 byteCount and complete column bytes. Same output, local x/z 0..7.
 // --brick input: uint32 byteCount and compressed bytes; output 512 uint16 cells
-//   in native x+8*y+64*z order, matching the earlier surface helper.
+//   in native x+8*y+64*z order.
 // --components intervals.bin fresh-labels.bin: connect neighboring X/Z air
 //   intervals when their half-open height intervals overlap by at least one
 //   cell. Output uint32 compact component IDs in the original record order.
@@ -22,7 +20,7 @@
 // --surface-components intervals.bin fresh-labels.bin: the same adjacency and
 //   output contract, additionally requiring floor-height difference <=2 cells
 //   and >=3 air cells above the higher floor shared by both intervals. This is
-//   a geometric step-connected surface graph, not a gameplay navigation mesh.
+//   a geometric surface graph; player collision and traversal are not simulated.
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -49,6 +47,7 @@ static uint32_t u24(const uint8_t* p) {
     return u16(p) | (uint32_t(p[2]) << 16);
 }
 
+// The voxel metadata stream stores bits least-significant first within each byte.
 struct Bits {
     const uint8_t* data;
     size_t size, position = 0;
@@ -65,6 +64,7 @@ struct Bits {
         return uint32_t(word & ((uint64_t(1) << count) - 1));
     }
     uint32_t gamma() {
+        // Each continuation bit introduces a value bit; zero terminates the run length.
         uint32_t value = 1;
         while (get()) {
             require(value <= 0x7fffffff, "Voxel run overflow");
@@ -75,6 +75,7 @@ struct Bits {
 };
 
 static std::array<uint16_t, 512> decode(const uint8_t* data, size_t size) {
+    // Material and density runs share a forward bitstream and a reverse literal tail.
     Bits bits{data, size};
     size_t back = size;
     auto literal = [&]() {
@@ -93,6 +94,7 @@ static std::array<uint16_t, 512> decode(const uint8_t* data, size_t size) {
         std::fill_n(materials.begin() + at, run, material);
         at += run;
     }
+    // Pack each material byte with its density byte after resolving implicit densities.
     std::array<uint16_t, 512> result{};
     at = 0;
     uint8_t lastDensity = 0;
@@ -117,6 +119,7 @@ static std::array<uint16_t, 512> decode(const uint8_t* data, size_t size) {
 }
 
 static bool solid(uint16_t raw) {
+    // Materials below 128 use a half-density threshold; higher IDs use any nonzero density.
     unsigned material = raw & 255, density = raw >> 8;
     return material && (material < 128 ? density >= 128 : density != 0);
 }
@@ -136,6 +139,7 @@ struct Bounds {
     }
 };
 
+// Track floor-to-ceiling air runs independently for the column's 8 by 8 cells.
 struct ColumnIntervals {
     const Bounds& bounds;
     uint32_t baseX, baseZ;
@@ -158,6 +162,7 @@ struct ColumnIntervals {
     void cell(unsigned at, uint32_t y, uint16_t raw) {
         if (!active[at]) return;
         if (solid(raw)) {
+            // Emit only after both supporting floor and closing ceiling have been observed.
             if (!occupied[at]
                 && start[at] != std::numeric_limits<uint32_t>::max()
                 && y - start[at] >= bounds.minAir) {
@@ -182,8 +187,7 @@ struct ColumnIntervals {
         lo = std::max(lo, bounds.ymin);
         hi = std::min(hi, bounds.ymax);
         if (lo >= hi) return;
-        // A constant run changes state only at its first cell. Its final raw
-        // value is the same, so this handles arbitrarily tall runs in O(64).
+        // Identical cells change state only at the run's start, regardless of its height.
         for (unsigned at = 0; at < 64; ++at) cell(at, lo, raw);
     }
 
@@ -211,6 +215,7 @@ static void intervals(const uint8_t* data, size_t size, const Bounds& bounds,
     uint8_t material = 0, density = 0;
     uint32_t y = 0;
     ColumnIntervals column(bounds, x, z, output);
+    // Metadata selects constant runs or compressed 8-cell-high bricks from the payload.
     while (y < height) {
         uint32_t run = bits.gamma(), compressed = bits.get();
         require(run <= height - y, "Column run exceeds declared height");
@@ -238,10 +243,10 @@ static void intervals(const uint8_t* data, size_t size, const Bounds& bounds,
     }
     require(offset == payloadSize && (bits.position + 7) / 8 == metadataSize,
             "Unconsumed column payload or metadata");
-    // The absent volume above a column is air. An interval without an encoded
-    // solid ceiling is deliberately not emitted.
+    // Air extending past the encoded column has no solid ceiling and is not emitted.
 }
 
+// Binary frames and interval records are shared with the Python coordinator.
 static void input(void* target, size_t size) {
     require(bool(std::cin.read(static_cast<char*>(target), size)),
             "Truncated input frame");
@@ -270,6 +275,7 @@ static void writeIntervals(std::ostream& output,
     require(bool(output), "Interval output write failed");
 }
 
+// Compress union-find paths before further joins or compact label assignment.
 static uint32_t findRoot(std::vector<uint32_t>& parents, uint32_t at) {
     uint32_t root = at;
     while (parents[root] != root) root = parents[root];
@@ -283,6 +289,7 @@ static uint32_t findRoot(std::vector<uint32_t>& parents, uint32_t at) {
 
 static void components(const char* inputPath, const char* outputPath,
                        bool surfaces = false) {
+    // Validate records and limit the column index to their occupied horizontal bounds.
     require(!std::filesystem::exists(outputPath),
             "Expected fresh component-label destination");
     uint64_t bytes = std::filesystem::file_size(inputPath);
@@ -322,6 +329,7 @@ static void components(const char* inputPath, const char* outputPath,
         head[cell] = i;
     }
     uint64_t sharedEdges = 0, joins = 0;
+    // Merge the sorted interval lists of adjacent columns, joining qualifying overlaps.
     auto connect = [&](uint32_t a, uint32_t b) {
         while (a != none && b != none) {
             const auto& ar = records[a];
@@ -347,6 +355,7 @@ static void components(const char* inputPath, const char* outputPath,
             else b = next[b];
         }
     };
+    // Visit each undirected horizontal neighbor pair once.
     for (uint32_t z = 0; z < depth; ++z) {
         for (uint32_t x = 0; x < width; ++x) {
             size_t cell = size_t(z)*width+x;
@@ -376,6 +385,7 @@ static void components(const char* inputPath, const char* outputPath,
         parents[i] = assigned | label;
     }
     for (auto& label : parents) label &= ~assigned;
+    // Persist labels in record order and report component sizes on stderr.
     std::ofstream output(outputPath, std::ios::binary);
     output.write(reinterpret_cast<const char*>(parents.data()),
                  std::streamsize(parents.size()*sizeof(uint32_t)));
@@ -445,6 +455,7 @@ int main(int argc, char** argv) {
                 "Wrong finest-grid interval header");
         Bounds b{h[3],h[4],h[5],h[6],h[7],h[8],h[9]};
         b.validate();
+        // Every finest tile intersecting the requested bounds must appear exactly once.
         std::array<bool, 6400> seen{};
         uint32_t expected = ((b.xmax - 1)/256 - b.xmin/256 + 1)
                             * ((b.zmax - 1)/256 - b.zmin/256 + 1);
@@ -464,6 +475,7 @@ int main(int argc, char** argv) {
             auto data = frame();
             require(data.size() >= 2, "Truncated complete tile");
             unsigned width = data[0], depth = data[1], count = width * depth;
+            // Each tile indexes 32 by 32 columns with 24-bit offsets into the payload.
             size_t base = 2 + 3*count;
             require(width == 32 && depth == 32 && base <= data.size(),
                     "Wrong finest tile dimensions");

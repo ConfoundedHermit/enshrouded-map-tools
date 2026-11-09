@@ -12,8 +12,7 @@ from enshrouded_data.map_tool.world import (
 
 class WorldProfileTests(unittest.TestCase):
     def test_bc4_bound_covers_every_explicit_selector_position(self):
-        # A six-value block has an explicit 255 entry, even with tiny endpoints.
-        # This catches the old endpoint-only interpretation of the green channel.
+        # Six-value BC4 mode includes an explicit 255 palette entry.
         for position in range(16):
             block = bytes([0, 1]) + (7 << (position * 3)).to_bytes(6, 'little')
             self.assertEqual(bc4_upper_bound(block), 255)

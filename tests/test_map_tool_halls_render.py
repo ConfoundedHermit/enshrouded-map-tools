@@ -1,3 +1,4 @@
+"""Flattened hall geometry, composited pixels and continuous marker projection checks."""
 import hashlib
 from pathlib import Path
 import struct
@@ -58,8 +59,7 @@ class HollowFlatMapTests(unittest.TestCase):
 
     def test_actual_png_composites_lower_surfaces_without_changing_the_footprint(self):
         top = [(x, z, 90, 100) for x in range(40) for z in range(40)]
-        # The common minimum keeps the base elevation palette fixed in all
-        # three images, independently of the lower patches under comparison.
+        # A shared minimum keeps the elevation palette fixed across all three images.
         common = top + [(0, 0, 0, 8)]
         lower = [(x, z, 10, 20) for x in range(8, 20) for z in range(8, 20)]
         middle = [(12, 12, 50, 60)]
@@ -69,7 +69,7 @@ class HollowFlatMapTests(unittest.TestCase):
                        for i, samples in enumerate((common, common + lower, common + lower + middle))]
             decoded = [_decode(report['path']) for report in reports]
             ox, oy = reports[0]['panels'][0]['map_origin_pixels']
-            # A lower sample actually changes the RGB at that exact shared X/Z.
+            # Convert the shared X/Z column to north-up image coordinates.
             location = (ox + 12, oy + 40 - 12 - 1)
             self.assertNotEqual(decoded[0][2](*location), decoded[1][2](*location))
             self.assertNotEqual(decoded[1][2](*location), decoded[2][2](*location))

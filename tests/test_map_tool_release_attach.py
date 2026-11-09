@@ -1,4 +1,4 @@
-"""Release attachment checks use synthetic GitHub envelopes and local files."""
+"""Release attachment checks using local assets and simulated GitHub responses."""
 from contextlib import redirect_stdout
 import hashlib
 import importlib.util
@@ -17,6 +17,8 @@ REPO = 'owner/maps'
 
 
 class FakeGitHub:
+    """Simulate paginated assets, annotated tags and release changes during uploads."""
+
     repository = REPO
 
     def __init__(self):

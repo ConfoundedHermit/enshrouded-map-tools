@@ -1,8 +1,4 @@
-"""Small read-only KFC4 content adapter, using the pinned parser's layouts.
-
-Descriptor decoding remains upstream kfc-parser's responsibility. This module
-only reads indexed content and the reflected subset needed for localization.
-"""
+"""Read KFC4 indexed content and decode reflected localization values."""
 
 from __future__ import annotations
 
@@ -14,6 +10,7 @@ import uuid
 
 
 def guid_hash(value: str):
+    """Compute 32-bit FNV-1a over the GUID's Windows byte layout."""
     digest = 0x811C9DC5
     for byte in uuid.UUID(value).bytes_le:
         digest = ((digest ^ byte) * 0x01000193) & 0xFFFFFFFF
@@ -21,6 +18,8 @@ def guid_hash(value: str):
 
 
 class KFCIndex:
+    """Map content hashes to byte ranges in the installation's data archives."""
+
     def __init__(self, game: Path):
         self.game = game
         self.data = (game / "enshrouded.kfc").read_bytes()
@@ -39,6 +38,7 @@ class KFCIndex:
             self.contents[key] = (offset, flags, container)
 
     def location(self, offset):
+        """Resolve a KFC relative offset and count from their header location."""
         relative, count = struct.unpack_from("<II", self.data, offset)
         target = offset + relative
         if target > len(self.data):
@@ -51,6 +51,7 @@ class KFCIndex:
         return self.data[offset:offset + count].decode("utf-8")
 
     def content(self, reference):
+        """Read one unflagged content payload and return its archive provenance."""
         key = tuple(reference[name] for name in ("size", "hash0", "hash1", "hash2"))
         offset, flags, container = self.contents[key]
         if flags:
@@ -68,7 +69,7 @@ class KFCIndex:
 
 
 class ReflectedReader:
-    """Bounds-checked localization decoder driven by this executable's types."""
+    """Decode localization values using extracted type layouts and bounds checks."""
 
     def __init__(self, reflection: Path):
         self.registry = json.loads(reflection.read_text(encoding="utf-8"))
@@ -90,6 +91,7 @@ class ReflectedReader:
         primitive = kind['primitiveType']
         if primitive == 'STRUCT':
             result = {}
+            # Decode base-struct fields before the derived fields at their offsets.
             if 'innerType' in kind:
                 result.update(self._read(data, self.types[kind['innerType']], offset, depth + 1))
             for name, field in kind.get('structFields', {}).items():
@@ -109,6 +111,7 @@ class ReflectedReader:
                 return data[target:target + count].decode('utf-8')
             inner = self.types[kind['innerType']]
             alignment = inner['alignment']
+            # Array elements occupy their size rounded up to the type's alignment.
             stride = (inner['size'] + alignment - 1) // alignment * alignment
             if not stride:
                 raise ValueError("Zero-sized localization array element")
@@ -125,6 +128,7 @@ class ReflectedReader:
 
 
 def load_localization(game: Path, descriptors: Path, reflection: Path, locale='En_Us'):
+    """Decode one language's tags with matching reflection and content provenance."""
     paths = list((descriptors / 'LocaTagCollectionResource').glob('*.json'))
     if len(paths) != 1:
         raise ValueError("Expected one localization collection")

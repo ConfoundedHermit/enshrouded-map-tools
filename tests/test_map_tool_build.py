@@ -15,11 +15,11 @@ from enshrouded_data.map_tool.core import digest, load_bundle, read, write_json
 class BuildTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        # Hosted Windows runners can expose TEMP through an 8.3 alias. Compare
-        # fixtures using the same canonical paths as the actual build tooling.
+        # Resolve Windows TEMP aliases consistently with the build tooling.
         self.root = Path(self.temporary.name).resolve()
         self.source = self.root / 'source with spaces'
         self.module = self.source / 'enshrouded_data/map_tool'
+        # Include public sources and private extras to test the package inventory.
         (self.module / 'native').mkdir(parents=True)
         (self.module / 'profiles').mkdir()
         (self.source / 'enshrouded_data/kfc.py').write_text('# fixture parser interface\n')
@@ -41,6 +41,7 @@ class BuildTests(unittest.TestCase):
             if not path.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('{}\n' if path.suffix == '.json' else '# public source fixture\n')
+        # Pin synthetic dependency bytes for the same checks used by real builds.
         self.vulkan = self.root / 'Vulkan headers'
         (self.vulkan / 'include/vulkan').mkdir(parents=True)
         (self.vulkan / 'include/vulkan/vulkan_core.h').write_text('// fixture Vulkan header\n')
@@ -64,6 +65,7 @@ class BuildTests(unittest.TestCase):
                 'files': {name: digest(self.vulkan / name) for name in
                     ('LICENSE.md', 'include/vulkan/vulkan_core.h')}}}
         write_json(self.source / build.LOCK_NAME, self.lock)
+        # Reproduce the installed x64 compiler and Windows SDK directory layouts.
         self.vc = self.root / 'Visual Studio/VC/Tools/MSVC/14.51.00000'
         self.compiler = self.vc / 'bin/Hostx64/x64/cl.exe'
         self.compiler.parent.mkdir(parents=True)
