@@ -67,6 +67,11 @@ checks their identities, and retains the required third-party notices and
 source. A Vulkan SDK installation is unnecessary for compilation. Build
 receipts record the actual selected compiler, SDK, source and binary hashes.
 
+Before downloading dependencies or creating build output, automation checks that
+every entry in the shared `PACKAGE_SOURCE_FILES` inventory is a regular file in
+the captured source commit. The package builder copies only those listed project
+files, so ignored local runtime data and draft documents cannot enter a release.
+
 CI does not obtain game archives or render full game maps. It runs focused
 tests, including the freshly compiled native JPEG helper, and verifies the
 extracted package, launcher and supported profiles. Actual client extraction,

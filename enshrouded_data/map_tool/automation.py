@@ -206,6 +206,24 @@ def source_commit(source):
     return commit
 
 
+def verify_package_sources(source, commit):
+    """Every public source must be a regular file in the captured commit."""
+    sources = build.package_sources(source)
+    tree = subprocess.check_output(['git', '-C', str(source), 'ls-tree', '-rz',
+        commit, '--', '.'], text=True, encoding='utf-8')
+    regular = set()
+    for entry in tree.split('\0'):
+        if not entry:
+            continue
+        metadata, name = entry.split('\t', 1)
+        mode, kind, _ = metadata.split()
+        if kind == 'blob' and mode in ('100644', '100755'):
+            regular.add(name)
+    missing = sources.keys() - regular
+    if missing:
+        raise ValueError('Public package sources must be committed regular files: ' + ', '.join(sorted(missing)))
+
+
 def write_assets(output, archive, tag, commit, version=__version__):
     """Bind the exact two public assets to a version and checked-out commit."""
     output, archive = Path(output).resolve(), Path(archive).resolve()
@@ -229,6 +247,7 @@ def build_release(output, dependencies, source=build.SOURCE_ROOT, tag=None, prog
     tag = release_tag(tag)
     source, output = Path(source).resolve(), Path(output).resolve()
     commit = source_commit(source)
+    verify_package_sources(source, commit)
     build._fresh_output(output, source)
     # Keep build/dependency artifacts out of the source and final package.
     output.mkdir(parents=True)

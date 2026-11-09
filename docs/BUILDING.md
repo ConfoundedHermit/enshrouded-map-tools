@@ -118,6 +118,16 @@ pinned source ZIP, helper build receipts and a `bundle.json` integrity manifest.
 No game installation or extracted game resources are needed for packaging.
 Existing destinations are preserved; choose a fresh path for another build.
 
+Both builders copy project source and documents only from the explicit
+`PACKAGE_SOURCE_FILES` inventory in
+[`portable_build.py`](../enshrouded_data/map_tool/portable_build.py). Add an entry
+when adding a runtime module, supported profile or contributor document that
+belongs in the package. Files outside the inventory, including ignored local
+credentials, extraction data and draft documents, are excluded. Missing listed
+files, symbolic links and directory junctions stop packaging before the output
+folder is created. The offline builder does not require Git metadata; automated
+releases also require every listed source to be a committed regular file.
+
 ## Release acceptance
 
 Extract the final ZIP into a separate folder and run it from there with

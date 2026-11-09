@@ -22,6 +22,42 @@ HELPERS = {
 }
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 LOCK_NAME = 'enshrouded_data/map_tool/build-dependencies.json'
+# Public source inventory shared by offline packaging and release validation.
+# Add new runtime files and contributor documents here deliberately; never scan
+# the working tree for package contents, which can include ignored private data.
+PACKAGE_SOURCE_FILES = (
+    'LICENSE',
+    'README.md',
+    'THIRD_PARTY.md',
+    'docs/AUTOMATION.md',
+    'docs/BUILDING.md',
+    'docs/HOW-IT-WORKS.md',
+    'docs/VALIDATION.md',
+    'docs/manual-upload.md',
+    'docs/wiki-guide.wikitext',
+    'enshrouded_data/__init__.py',
+    'enshrouded_data/kfc.py',
+    'enshrouded_data/map_tool/__init__.py',
+    'enshrouded_data/map_tool/__main__.py',
+    'enshrouded_data/map_tool/automation.py',
+    LOCK_NAME,
+    'enshrouded_data/map_tool/cli.py',
+    'enshrouded_data/map_tool/core.py',
+    'enshrouded_data/map_tool/delivery.py',
+    'enshrouded_data/map_tool/hall_flatten.py',
+    'enshrouded_data/map_tool/hall_render.py',
+    'enshrouded_data/map_tool/halls.py',
+    'enshrouded_data/map_tool/halls_geometry.py',
+    'enshrouded_data/map_tool/halls_scene.py',
+    'enshrouded_data/map_tool/native/hollow_geometry.cpp',
+    'enshrouded_data/map_tool/native/map_jpeg.cpp',
+    'enshrouded_data/map_tool/native/world_renderer.cpp',
+    'enshrouded_data/map_tool/portable_build.py',
+    'enshrouded_data/map_tool/profiles/builds.json',
+    'enshrouded_data/map_tool/profiles/halls-26430625.json',
+    'enshrouded_data/map_tool/profiles/world-26430625.json',
+    'enshrouded_data/map_tool/world.py',
+)
 
 
 def _within(root, name):
@@ -192,20 +228,29 @@ def _parser_license(source_archive, pin):
         return archive.read('LICENSE')
 
 
-def _copy_runtime(source, output):
-    (output / 'enshrouded_data').mkdir()
-    (output / 'enshrouded_data/__init__.py').write_text('"""Enshrouded contributor map tool."""\n', encoding='utf-8')
-    shutil.copyfile(source / 'enshrouded_data/kfc.py', output / 'enshrouded_data/kfc.py')
-    package = source / 'enshrouded_data/map_tool'
-    for path in sorted(package.rglob('*')):
-        relative = path.relative_to(package)
-        if '__pycache__' in relative.parts or path.name == 'release.py':
-            continue
-        if not path.is_file() or path.suffix not in ('.py', '.cpp', '.json'):
-            continue
-        if path.is_symlink() or not path.resolve().is_relative_to(package.resolve()):
-            raise ValueError('Runtime source files must not be symbolic links: ' + str(relative))
-        target = output / 'enshrouded_data/map_tool' / relative
+def package_sources(source):
+    """Validate the public inventory without requiring Git or traversing extras."""
+    source = Path(source).resolve()
+    files = {}
+    for name in PACKAGE_SOURCE_FILES:
+        # Keep the unresolved path so links to other locations inside the source
+        # tree are rejected too, including Windows directory junctions.
+        _within(source, name)
+        path = source / name
+        current = path
+        while current != source:
+            if current.is_symlink() or current.is_junction():
+                raise ValueError('Public package sources must not use links: ' + name)
+            current = current.parent
+        if not path.is_file():
+            raise ValueError('Missing public package source: ' + name)
+        files[name] = path
+    return files
+
+
+def _copy_sources(files, output):
+    for name, path in files.items():
+        target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
 
@@ -227,6 +272,7 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
                   vulkan_headers=None, progress=print):
     source = Path(source).resolve()
     output = _fresh_output(output, source)
+    sources = package_sources(source)
     helpers = Path(helpers).resolve()
     lock, lock_sha256 = _lock(source)
     pin = lock['parser']
@@ -264,7 +310,7 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
     if not (source / 'README.md').is_file():
         raise ValueError('The source root must contain the contributor README.md.')
     output.mkdir(parents=True)
-    _copy_runtime(source, output)
+    _copy_sources(sources, output)
     (output / 'helpers').mkdir()
     for name in HELPERS:
         shutil.copyfile(helpers / name, output / 'helpers' / name)
@@ -284,15 +330,6 @@ def build_package(output, helpers, source=SOURCE_ROOT, parser=None, parser_sourc
         'The exact corresponding source, Cargo.lock and upstream license are included.\n'
         'Vulkan-Headers are compile-time declarations; their upstream license is retained.\n'
         'The Vulkan loader and Windows imaging libraries come from the local system.\n', encoding='utf-8')
-    for name in ('README.md', 'LICENSE', 'THIRD_PARTY.md'):
-        if (source / name).is_file():
-            shutil.copyfile(source / name, output / name)
-    if (source / 'docs').is_dir():
-        for path in sorted((source / 'docs').rglob('*')):
-            if path.is_file() and path.suffix in ('.md', '.wikitext'):
-                target = output / path.relative_to(source)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(path, target)
     launcher = ('@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'
         'where py >nul 2>nul\r\nif errorlevel 1 goto usepython\r\n'
         'py -3.13 -B -m enshrouded_data.map_tool %*\r\nexit /b %errorlevel%\r\n'

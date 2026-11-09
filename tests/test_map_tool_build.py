@@ -33,9 +33,14 @@ class BuildTests(unittest.TestCase):
         (self.source / 'LICENSE').write_text('MIT License\nCopyright (c) fixture\n')
         (self.source / 'README.md').write_text('# Contributor guide\n')
         (self.source / 'docs').mkdir()
-        (self.source / 'docs/MANUAL_UPLOAD.md').write_text('Upload maps manually.\n')
+        (self.source / 'docs/manual-upload.md').write_text('Upload maps manually.\n')
         (self.source / 'third-party').mkdir()
         (self.source / 'third-party/Apache-2.0.txt').write_text('Apache License fixture complete text\n')
+        for name in build.PACKAGE_SOURCE_FILES:
+            path = self.source / name
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('{}\n' if path.suffix == '.json' else '# public source fixture\n')
         self.vulkan = self.root / 'Vulkan headers'
         (self.vulkan / 'include/vulkan').mkdir(parents=True)
         (self.vulkan / 'include/vulkan/vulkan_core.h').write_text('// fixture Vulkan header\n')
@@ -147,18 +152,111 @@ class BuildTests(unittest.TestCase):
         self.assertFalse((output / 'build.json').exists())
 
     def test_package_has_closed_hash_manifest_and_corresponding_source_and_licenses(self):
+        private_names = ('enshrouded_data/map_tool/credentials.py',
+            'enshrouded_data/map_tool/cache.json',
+            'enshrouded_data/map_tool/profiles/private-cache.json',
+            'enshrouded_data/map_tool/native/private.cpp',
+            'docs/private-draft.md', 'docs/cache/private.wikitext')
+        for name in private_names:
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('private fixture credentials: must not ship\n')
         package = self.package(self.helpers())
         bundle = load_bundle(package)
         self.assertEqual(set(bundle['files']), {p.relative_to(package).as_posix()
             for p in package.rglob('*') if p.is_file() and p.name != 'bundle.json'})
+        for name in build.PACKAGE_SOURCE_FILES:
+            self.assertEqual((package / name).read_bytes(), (self.source / name).read_bytes(), name)
+        archive = build.zip_package(package, self.root / 'package.zip')
+        with zipfile.ZipFile(archive['archive']) as opened:
+            members = {name.removeprefix(package.name + '/') for name in opened.namelist()}
+        for name in private_names:
+            self.assertFalse((package / name).exists(), name)
+            self.assertNotIn(name, bundle['files'])
+            self.assertNotIn(name, members)
         self.assertEqual(digest(package / 'third-party/kfc-parser-source.zip'), digest(self.parser_source))
         self.assertIn('GNU GENERAL PUBLIC LICENSE', (package / 'third-party/kfc-parser-LICENSE.txt').read_text())
         self.assertIn('MIT License', (package / 'LICENSE').read_text())
-        self.assertTrue((package / 'docs/MANUAL_UPLOAD.md').is_file())
+        self.assertTrue((package / 'docs/manual-upload.md').is_file())
         self.assertTrue((package / 'third-party/Apache-2.0.txt').is_file())
         self.assertFalse((package / 'DISTRIBUTION-STATUS.txt').exists())
         self.assertFalse((package / 'enshrouded_data/map_tool/secret.txt').exists())
         self.assertFalse((package / 'enshrouded_data/map_tool/release.py').exists())
+
+    def test_package_from_source_archive_does_not_require_git(self):
+        helpers = self.helpers()
+        self.assertFalse((self.source / '.git').exists())
+        with (patch.object(build.subprocess, 'run', side_effect=AssertionError('Offline packaging must not run Git')),
+                patch.object(build.subprocess, 'check_output', side_effect=AssertionError('Offline packaging must not run Git'))):
+            package = self.package(helpers)
+        self.assertEqual(set(build.PACKAGE_SOURCE_FILES), set(build.package_sources(self.source)))
+        self.assertTrue((package / 'bundle.json').is_file())
+
+    def test_missing_public_runtime_profile_or_doc_fails_before_output_creation(self):
+        helpers = self.helpers()
+        for index, name in enumerate(('enshrouded_data/map_tool/world.py',
+                'enshrouded_data/map_tool/profiles/halls-26430625.json', 'docs/manual-upload.md')):
+            with self.subTest(name=name):
+                path = self.source / name
+                original = path.read_bytes()
+                path.unlink()
+                output = self.root / ('missing-input-' + str(index))
+                try:
+                    with self.assertRaises(ValueError) as error:
+                        self.package(helpers, output)
+                    self.assertIn(path.name, str(error.exception))
+                    self.assertFalse(output.exists())
+                finally:
+                    path.write_bytes(original)
+
+    def test_public_source_file_symlink_is_rejected_even_within_source(self):
+        helpers = self.helpers()
+        target = self.source / 'private-manual.md'
+        path = self.source / 'docs/manual-upload.md'
+        target.write_bytes(path.read_bytes())
+        path.unlink()
+        try:
+            path.symlink_to(target)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest('File symlink creation is unavailable: ' + str(error))
+        output = self.root / 'linked-source-output'
+        with self.assertRaises(ValueError):
+            self.package(helpers, output)
+        self.assertFalse(output.exists())
+
+    def test_public_source_ancestor_directory_symlink_is_rejected(self):
+        helpers = self.helpers()
+        path = self.source / 'docs'
+        target = self.source / 'private-docs'
+        path.rename(target)
+        try:
+            path.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest('Directory symlink creation is unavailable: ' + str(error))
+        output = self.root / 'linked-docs-output'
+        with self.assertRaises(ValueError):
+            self.package(helpers, output)
+        self.assertFalse(output.exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows directory junctions')
+    def test_public_source_ancestor_junction_is_rejected(self):
+        helpers = self.helpers()
+        path = self.source / 'docs'
+        target = self.source / 'private-docs'
+        path.rename(target)
+        command = Path(os.environ.get('SystemRoot', 'C:/Windows')) / 'System32/cmd.exe'
+        result = subprocess.run([str(command), '/d', '/c', 'mklink', '/J', str(path), str(target)],
+            capture_output=True, text=True)
+        if result.returncode:
+            self.skipTest('Directory junction creation is unavailable: ' + result.stderr)
+        self.assertTrue(path.is_junction())
+        output = self.root / 'junction-docs-output'
+        try:
+            with self.assertRaises(ValueError):
+                self.package(helpers, output)
+            self.assertFalse(output.exists())
+        finally:
+            path.rmdir()
 
     def test_package_rejects_changed_helper_source_before_creating_output(self):
         helpers = self.helpers()

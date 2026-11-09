@@ -136,6 +136,46 @@ class AutomationTests(unittest.TestCase):
         with patch.object(release.subprocess, 'check_output', side_effect=['', 'a' * 40 + '\n']):
             self.assertEqual(release.source_commit(self.root), 'a' * 40)
 
+    def test_package_sources_must_belong_to_the_captured_commit(self):
+        commit = 'c' * 40
+        sources = {'README.md': self.root / 'README.md',
+                   'enshrouded_data/map_tool/cli.py': self.root / 'cli.py',
+                   'docs/Public notes.md': self.root / 'Public notes.md'}
+        tree = ('100644 blob ' + '1' * 40 + '\tREADME.md\0'
+                '100755 blob ' + '2' * 40 + '\tenshrouded_data/map_tool/cli.py\0'
+                '100644 blob ' + '3' * 40 + '\tdocs/Public notes.md\0'
+                '120000 blob ' + '4' * 40 + '\tignored-link\0'
+                '160000 commit ' + '5' * 40 + '\tother-project\0')
+        with (patch.object(release.build, 'package_sources', return_value=sources) as inventory,
+                patch.object(release.subprocess, 'check_output', return_value=tree) as git):
+            release.verify_package_sources(self.root, commit)
+        inventory.assert_called_once_with(self.root)
+        git.assert_called_once_with(['git', '-C', str(self.root), 'ls-tree', '-rz',
+            commit, '--', '.'], text=True, encoding='utf-8')
+
+    def test_uncommitted_package_source_cannot_claim_release_provenance(self):
+        sources = {'README.md': self.root / 'README.md',
+                   'docs/public.md': self.root / 'public.md'}
+        # A similarly named file elsewhere in the commit does not establish
+        # provenance for a required public source at its actual package path.
+        tree = ('100644 blob ' + '1' * 40 + '\tREADME.md\0'
+                '100644 blob ' + '2' * 40 + '\tprivate/public.md\0')
+        with (patch.object(release.build, 'package_sources', return_value=sources),
+                patch.object(release.subprocess, 'check_output', return_value=tree)):
+            with self.assertRaisesRegex(ValueError, 'docs/public\\.md'):
+                release.verify_package_sources(self.root, 'c' * 40)
+
+    def test_package_sources_cannot_be_committed_links_or_submodules(self):
+        source_name = 'enshrouded_data/map_tool/cli.py'
+        sources = {source_name: self.root / 'cli.py'}
+        for mode, kind in (('120000', 'blob'), ('160000', 'commit'), ('040000', 'tree')):
+            with self.subTest(mode=mode, kind=kind):
+                tree = mode + ' ' + kind + ' ' + '1' * 40 + '\t' + source_name + '\0'
+                with (patch.object(release.build, 'package_sources', return_value=sources),
+                        patch.object(release.subprocess, 'check_output', return_value=tree)):
+                    with self.assertRaisesRegex(ValueError, 'committed regular files'):
+                        release.verify_package_sources(self.root, 'c' * 40)
+
     def test_source_bootstrap_requires_both_outer_release_and_nested_source_hashes(self):
         source = b'exact original corresponding source ZIP'
         bootstrap = self.archive([(release.BOOTSTRAP_MEMBER, source)])
@@ -207,10 +247,29 @@ class AutomationTests(unittest.TestCase):
         dependencies.assert_not_called()
         self.assertFalse((self.root / 'dist').exists())
 
+    def test_invalid_package_inventory_fails_before_output_dependencies_or_compilation(self):
+        output = self.root / 'dist'
+        dependencies_root = self.root / 'dependencies'
+        commit = 'd' * 40
+        with (patch.object(release, 'source_commit', return_value=commit) as source_commit,
+                patch.object(release, 'verify_package_sources',
+                    side_effect=ValueError('Public source is not committed')) as inventory,
+                patch.object(release, 'prepare_dependencies') as dependencies,
+                patch.object(release.build, 'build_helpers') as compiler):
+            with self.assertRaisesRegex(ValueError, 'not committed'):
+                release.build_release(output, dependencies_root, source=self.root)
+        source_commit.assert_called_once_with(self.root.resolve())
+        inventory.assert_called_once_with(self.root.resolve(), commit)
+        dependencies.assert_not_called()
+        compiler.assert_not_called()
+        self.assertFalse(output.exists())
+        self.assertFalse(dependencies_root.exists())
+
     def test_test_failure_prevents_packaging_or_checksum_publication(self):
         output = self.root / 'dist'
         dependencies = {'vulkan_headers': self.root / 'headers'}
         with (patch.object(release, 'source_commit', return_value='d' * 40),
+                patch.object(release, 'verify_package_sources'),
                 patch.object(release, 'prepare_dependencies', return_value=dependencies),
                 patch.object(release.build, 'build_helpers', return_value=output / 'helpers'),
                 patch.object(release.build, 'build_package') as package,
