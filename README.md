@@ -80,10 +80,12 @@ python -B -m unittest discover -s tests -p "test_map_tool*.py"
 ```
 
 See [Building from source](docs/BUILDING.md) for dependency pins, native
-compilation and release packaging. No game archives, extracted game resources
-or generated game images are included in the source or release package. Future
-game updates require a reviewed build profile and renderer validation; changing
-the profile's build number alone does not add support.
+compilation and release packaging, and [Release automation](docs/AUTOMATION.md)
+for GitHub Actions builds and automatic release attachments. No game archives,
+extracted game resources or generated game images are included in the source or
+release package. Future game updates require a reviewed build profile and
+renderer validation; changing the profile's build number alone does not add
+support.
 
 ## License and credits
 

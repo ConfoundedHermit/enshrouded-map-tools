@@ -6,6 +6,10 @@ The runtime and builder use the Python standard library; no `pip install` is
 required. Dependency acquisition is manual. Neither builder command downloads
 tools or game content.
 
+For GitHub-hosted builds and automatic release attachments, see
+[Automated Windows builds and releases](AUTOMATION.md). That separate automation
+command downloads the same pinned dependencies before calling this builder.
+
 ## Toolchain
 
 - Windows x64 and Python 3.13 x64.
